@@ -88,7 +88,7 @@ cd MarkdowntoWord
 pip install -r requirements.txt
 
 # 3. 启动程序
-python main.py
+python gui.py
 ```
 
 ---
