@@ -15,7 +15,14 @@ class StatusBarFeature:
         self.cursor_pos_label = None
 
     def create(self):
-        self.frame = ctk.CTkFrame(self.app, fg_color=COLORS['bg_card'], height=35, corner_radius=0)
+        container = ctk.CTkFrame(self.app, fg_color=COLORS['bg_light'], height=36, corner_radius=0)
+        container.pack(fill="x", side="bottom")
+
+        # 顶部分隔线
+        sep = ctk.CTkFrame(container, height=1, fg_color=COLORS['border'])
+        sep.pack(fill='x', side='top')
+
+        self.frame = ctk.CTkFrame(container, fg_color=COLORS['bg_card'], height=35, corner_radius=0)
         self.frame.pack(fill="x", side="bottom")
 
         self.status_label = ctk.CTkLabel(
@@ -24,10 +31,10 @@ class StatusBarFeature:
             font=ctk.CTkFont(size=12),
             text_color=COLORS['text_secondary'],
         )
-        self.status_label.pack(side="left", padx=20, pady=8)
+        self.status_label.pack(side="left", padx=18, pady=8)
 
         right_box = ctk.CTkFrame(self.frame, fg_color="transparent")
-        right_box.pack(side="right", padx=20, pady=0)
+        right_box.pack(side="right", padx=18, pady=0)
 
         self.word_count_label = ctk.CTkLabel(
             right_box,

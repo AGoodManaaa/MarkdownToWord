@@ -15,14 +15,19 @@ class ModernButton(ctk.CTkButton):
     def __init__(self, master, text, command=None, style="primary", icon=None, **kwargs):
         colors = {
             'primary': (COLORS['primary'], COLORS['primary_hover']),
-            'secondary': (COLORS['secondary'], '#DB2777'),
-            'success': (COLORS['success'], '#059669'),
-            'outline': ('transparent', COLORS['bg_light']),
+            'secondary': (COLORS['secondary'], '#E11D48'),
+            'success': (COLORS['success'], '#16A34A'),
+            'outline': ('transparent', COLORS['highlight']),
+            'ghost': ('transparent', COLORS['highlight']),
+            'danger': (COLORS['danger'], '#DC2626'),
         }
         
         fg_color, hover_color = colors.get(style, colors['primary'])
-        text_color = 'white' if style != 'outline' else COLORS['primary']
-        border_width = 2 if style == 'outline' else 0
+        is_outline = style == 'outline'
+        is_ghost = style == 'ghost'
+        is_light = is_outline or is_ghost
+        text_color = 'white' if not is_light else COLORS['text_primary']
+        border_width = 1 if is_outline else 0
         
         super().__init__(
             master,
@@ -32,10 +37,10 @@ class ModernButton(ctk.CTkButton):
             hover_color=hover_color,
             text_color=text_color,
             border_width=border_width,
-            border_color=COLORS['primary'] if style == 'outline' else None,
-            corner_radius=12,
-            height=40,
-            font=ctk.CTkFont(size=14, weight="bold"),
+            border_color=COLORS['border'] if is_outline else None,
+            corner_radius=14,
+            height=38,
+            font=ctk.CTkFont(size=13, weight="bold"),
             **kwargs
         )
 
@@ -46,7 +51,7 @@ class ModernCard(ctk.CTkFrame):
         super().__init__(
             master,
             fg_color=COLORS['bg_card'],
-            corner_radius=16,
+            corner_radius=18,
             border_width=1,
             border_color=COLORS['border'],
             **kwargs
@@ -56,7 +61,7 @@ class ModernCard(ctk.CTkFrame):
             self.title_label = ctk.CTkLabel(
                 self,
                 text=title,
-                font=ctk.CTkFont(size=16, weight="bold"),
+                font=ctk.CTkFont(size=15, weight="bold"),
                 text_color=COLORS['text_primary']
             )
             self.title_label.pack(anchor="w", padx=20, pady=(15, 10))
