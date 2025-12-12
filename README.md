@@ -5,7 +5,11 @@
 <h1 align="center">📝 MarkdowntoWord</h1>
 
 <p align="center">
+<<<<<<< HEAD
   <b>把你的 Markdown 变成漂亮的 Word 文档，就是这么简单！</b>
+=======
+  <b>把你从GPT上复制下来的 Markdown 变成漂亮的 Word 文档，就是这么简单！</b>
+>>>>>>> 691fd9f8bec8366f9561ef05de7dbffa83afa93b
 </p>
 
 <p align="center">
@@ -88,7 +92,11 @@ cd MarkdowntoWord
 pip install -r requirements.txt
 
 # 3. 启动程序
+<<<<<<< HEAD
 python main.py
+=======
+python gui.py
+>>>>>>> 691fd9f8bec8366f9561ef05de7dbffa83afa93b
 ```
 
 ---
@@ -166,8 +174,11 @@ MarkdowntoWord/
 
 本项目采用 [MIT License](LICENSE) 开源协议。
 
+<<<<<<< HEAD
 简单说就是：**随便用，注明出处就行！**
 
+=======
+>>>>>>> 691fd9f8bec8366f9561ef05de7dbffa83afa93b
 ---
 
 ## 💖 致谢
