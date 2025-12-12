@@ -5,8 +5,6 @@ Markdown转Word核心转换器
 
 import re
 import os
-import warnings
-warnings.filterwarnings('ignore')  # 抑制警告
 import logging
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
 
@@ -20,6 +18,14 @@ from styles import setup_document_styles, FONT_SIZES, FONTS
 from handlers import ImageHandler, TableHandler, MathHandler, CodeHandler, ListHandler
 from utils import clean_text, is_valid_math_formula, normalize_markdown, convert_latex_delimiters
 from parser import parse_markdown, parse_inline, parse_table, InlineType, BlockElement
+
+
+class ExportCancelled(Exception):
+    pass
+
+
+class ConversionError(Exception):
+    pass
 
 
 class MarkdownToWordConverter:
@@ -86,7 +92,7 @@ class MarkdownToWordConverter:
             print(f"转换失败: {e}")
             return False
     
-    def convert_text(self, markdown_text: str) -> Document:
+    def convert_text(self, markdown_text: str, progress_callback=None, cancel_event=None) -> Document:
         """
         转换Markdown文本为Word文档对象
         
@@ -107,16 +113,45 @@ class MarkdownToWordConverter:
         
         # 分割成块并处理
         blocks = self._split_into_blocks(markdown_text)
-        
-        for block_type, content in blocks:
-            self._process_block(block_type, content)
+        total = len(blocks)
+
+        for idx, blk in enumerate(blocks, start=1):
+            if cancel_event is not None and getattr(cancel_event, 'is_set', lambda: False)():
+                raise ExportCancelled('导出已取消')
+
+            block_type = blk.get('type')
+            content = blk.get('content')
+            start_line = int(blk.get('start_line') or 1)
+
+            if callable(progress_callback):
+                try:
+                    progress_callback(idx, total, block_type, start_line)
+                except Exception:
+                    pass
+
+            try:
+                self._process_block(block_type, content)
+            except ExportCancelled:
+                raise
+            except Exception as e:
+                snippet = ''
+                try:
+                    if isinstance(content, str):
+                        snippet = content.strip().replace('\n', ' ')[:180]
+                    else:
+                        snippet = str(content)[:180]
+                except Exception:
+                    snippet = ''
+                raise ConversionError(
+                    f"在第{start_line}行附近处理 {block_type} 失败: {e}" + (f"\n内容片段: {snippet}" if snippet else "")
+                ) from e
         
         return self.doc
     
     def _split_into_blocks(self, text: str) -> list:
         """
         将Markdown文本分割成块
-        返回 [(block_type, content), ...]
+        返回 [{'type': block_type, 'content': content, 'start_line': start_line}, ...]
         """
         blocks = []
         lines = text.split('\n')
@@ -132,18 +167,21 @@ class MarkdownToWordConverter:
             
             # 代码块 ```
             if line.strip().startswith('```'):
+                start_line = i + 1
                 block, i = self._extract_code_block(lines, i)
-                blocks.append(('code', block))
+                blocks.append({'type': 'code', 'content': block, 'start_line': start_line})
                 continue
             
             # 表格
             if '|' in line and i + 1 < len(lines) and re.match(r'^[\s\|\:\-]+$', lines[i + 1]):
+                start_line = i + 1
                 block, i = self._extract_table(lines, i)
-                blocks.append(('table', block))
+                blocks.append({'type': 'table', 'content': block, 'start_line': start_line})
                 continue
             
             # 块级公式 $$
             if line.strip().startswith('$$'):
+                start_line = i + 1
                 result = self._extract_block_math(lines, i)
                 if len(result) == 3:
                     block, i, remaining = result
@@ -152,51 +190,56 @@ class MarkdownToWordConverter:
                         lines = lines[:i] + [remaining] + lines[i:]
                 else:
                     block, i = result
-                blocks.append(('math_block', block))
+                blocks.append({'type': 'math_block', 'content': block, 'start_line': start_line})
                 continue
             
             # 标题
             if line.startswith('#'):
+                start_line = i + 1
                 level = len(re.match(r'^#+', line).group())
                 content = line[level:].strip()
-                blocks.append((f'heading_{min(level, 6)}', content))
+                blocks.append({'type': f'heading_{min(level, 6)}', 'content': content, 'start_line': start_line})
                 i += 1
                 continue
             
             # 引用块
             if line.startswith('>'):
+                start_line = i + 1
                 block, i = self._extract_quote(lines, i)
-                blocks.append(('quote', block))
+                blocks.append({'type': 'quote', 'content': block, 'start_line': start_line})
                 continue
             
             # 无序列表
             if re.match(r'^[\s]*[\*\-\+]\s', line):
+                start_line = i + 1
                 block, i = self._extract_list(lines, i, ordered=False)
-                blocks.append(('bullet_list', block))
+                blocks.append({'type': 'bullet_list', 'content': block, 'start_line': start_line})
                 continue
             
             # 有序列表
             if re.match(r'^[\s]*\d+\.\s', line):
+                start_line = i + 1
                 block, i = self._extract_list(lines, i, ordered=True)
-                blocks.append(('numbered_list', block))
+                blocks.append({'type': 'numbered_list', 'content': block, 'start_line': start_line})
                 continue
             
             # 水平分割线
             if re.match(r'^[\s]*[-\*_]{3,}[\s]*$', line):
-                blocks.append(('hr', ''))
+                blocks.append({'type': 'hr', 'content': '', 'start_line': i + 1})
                 i += 1
                 continue
             
             # 图片（单独一行）
             img_match = re.match(r'^!\[([^\]]*)\]\(([^\)]+)\)$', line.strip())
             if img_match:
-                blocks.append(('image', (img_match.group(1), img_match.group(2))))
+                blocks.append({'type': 'image', 'content': (img_match.group(1), img_match.group(2)), 'start_line': i + 1})
                 i += 1
                 continue
             
             # 普通段落
+            start_line = i + 1
             para, i = self._extract_paragraph(lines, i)
-            blocks.append(('paragraph', para))
+            blocks.append({'type': 'paragraph', 'content': para, 'start_line': start_line})
         
         return blocks
     
