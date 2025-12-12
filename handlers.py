@@ -22,9 +22,10 @@ from styles import apply_table_style, FONTS, FONT_SIZES
 class ImageHandler:
     """图片处理器"""
     
-    def __init__(self, base_dir: str = None):
+    def __init__(self, base_dir: str = None, style_config: dict = None):
         self.base_dir = base_dir
         self.image_counter = 0
+        self.style_config = style_config if isinstance(style_config, dict) else {}
     
     def add_image(self, doc: Document, image_path: str, alt_text: str = "", 
                   caption: str = None, max_width: float = 6.0) -> bool:
@@ -32,6 +33,7 @@ class ImageHandler:
         添加图片到文档
         返回是否成功
         """
+        image_path = (image_path or "").strip()
         resolved_path = resolve_image_path(image_path, self.base_dir)
         if not resolved_path:
             # 图片不存在，添加占位文本
@@ -41,33 +43,72 @@ class ImageHandler:
             return False
         
         try:
+            # max width override
+            max_width_cfg = self.style_config.get('image_max_width_in')
+            if max_width_cfg is not None:
+                try:
+                    max_width = float(max_width_cfg)
+                except Exception:
+                    pass
+
+            caption_align = str(self.style_config.get('image_caption_align', 'center')).lower()
+            caption_pos = str(self.style_config.get('image_caption_position', 'after')).lower()
+
+            def add_caption(text: str):
+                self.image_counter += 1
+                cap_para = doc.add_paragraph()
+                if caption_align == 'left':
+                    cap_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                elif caption_align == 'right':
+                    cap_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                else:
+                    cap_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                template = self.style_config.get('image_caption_template', f"图 {{num}}: {{text}}")
+                cap_run = cap_para.add_run(template.format(num=self.image_counter, text=text))
+                cap_size = self.style_config.get('caption_size_pt')
+                cap_run.font.size = Pt(float(cap_size)) if cap_size is not None else FONT_SIZES['caption']
+                cap_run.font.name = self.style_config.get('caption_font', FONTS['body_en'])
+
+            # caption before
+            if (caption or alt_text) and caption_pos == 'before':
+                add_caption(caption or alt_text)
+
             # 获取适当的图片尺寸
             width_inches, height_inches = get_image_dimensions(resolved_path, max_width)
-            
-            # 创建居中段落
+
             para = doc.add_paragraph()
             para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            
-            # 添加图片
             run = para.add_run()
             run.add_picture(resolved_path, width=Inches(width_inches))
-            
-            # 添加标题（如果有）
-            if caption or alt_text:
-                self.image_counter += 1
-                caption_text = caption or alt_text
-                cap_para = doc.add_paragraph()
-                cap_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                cap_run = cap_para.add_run(f"图 {self.image_counter}: {caption_text}")
-                cap_run.font.size = FONT_SIZES['caption']
-                cap_run.font.name = FONTS['body_en']
-            
+
+            # caption after
+            if (caption or alt_text) and caption_pos != 'before':
+                add_caption(caption or alt_text)
+
             return True
             
-        except (IOError, OSError) as e:
+        except (IOError, OSError):
             # 静默处理图片加载失败
             para = doc.add_paragraph()
             run = para.add_run(f"[图片加载错误: {image_path}]")
+            run.font.color.rgb = RGBColor(255, 0, 0)
+            return False
+
+    def add_inline_image(self, paragraph, image_path: str, alt_text: str = "", max_width: float = 6.0) -> bool:
+        image_path = (image_path or "").strip()
+        resolved_path = resolve_image_path(image_path, self.base_dir)
+        if not resolved_path:
+            run = paragraph.add_run(f"[图片无法加载: {image_path}]")
+            run.font.color.rgb = RGBColor(255, 0, 0)
+            return False
+
+        try:
+            width_inches, height_inches = get_image_dimensions(resolved_path, max_width)
+            run = paragraph.add_run()
+            run.add_picture(resolved_path, width=Inches(width_inches))
+            return True
+        except (IOError, OSError):
+            run = paragraph.add_run(f"[图片加载错误: {image_path}]")
             run.font.color.rgb = RGBColor(255, 0, 0)
             return False
 
@@ -75,8 +116,9 @@ class ImageHandler:
 class TableHandler:
     """表格处理器"""
     
-    def __init__(self):
+    def __init__(self, style_config: dict = None):
         self.table_counter = 0
+        self.style_config = style_config if isinstance(style_config, dict) else {}
     
     def parse_markdown_table(self, table_text: str) -> tuple:
         """
@@ -158,16 +200,46 @@ class TableHandler:
                     cell.text = cell_text
                     self._apply_cell_alignment(cell, alignments[col_idx] if alignments and col_idx < len(alignments) else 'left')
         
-        # 应用LaTeX三线表样式
-        apply_table_style(table)
-        
-        # 添加表格标题
-        if caption:
+        # 表格三线表样式开关
+        three_line = bool(self.style_config.get('table_three_line', True))
+        if three_line:
+            apply_table_style(table, self.style_config)
+        else:
+            try:
+                from docx.enum.table import WD_TABLE_ALIGNMENT
+                align = str(self.style_config.get('table_alignment', 'center')).lower()
+                if align == 'left':
+                    table.alignment = WD_TABLE_ALIGNMENT.LEFT
+                elif align == 'right':
+                    table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+                else:
+                    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            except Exception:
+                pass
+
+        caption_align = str(self.style_config.get('table_caption_align', 'center')).lower()
+        caption_pos = str(self.style_config.get('table_caption_position', 'after')).lower()
+
+        def add_caption(text: str):
             self.table_counter += 1
             cap_para = doc.add_paragraph()
-            cap_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            cap_run = cap_para.add_run(f"表 {self.table_counter}: {caption}")
-            cap_run.font.size = FONT_SIZES['caption']
+            if caption_align == 'left':
+                cap_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            elif caption_align == 'right':
+                cap_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            else:
+                cap_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            template = self.style_config.get('table_caption_template', f"表 {{num}}: {{text}}")
+            cap_run = cap_para.add_run(template.format(num=self.table_counter, text=text))
+            cap_size = self.style_config.get('caption_size_pt')
+            cap_run.font.size = Pt(float(cap_size)) if cap_size is not None else FONT_SIZES['caption']
+            cap_run.font.name = self.style_config.get('caption_font', FONTS['body_en'])
+
+        if caption and caption_pos == 'before':
+            add_caption(caption)
+
+        if caption and caption_pos != 'before':
+            add_caption(caption)
 
 
 class MathHandler:

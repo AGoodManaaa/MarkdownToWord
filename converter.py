@@ -25,7 +25,7 @@ from parser import parse_markdown, parse_inline, parse_table, InlineType, BlockE
 class MarkdownToWordConverter:
     """Markdown转Word转换器主类"""
     
-    def __init__(self, base_dir: str = None, style: str = "standard", page_size: str = "a4"):
+    def __init__(self, base_dir: str = None, style: str = "standard", page_size: str = "a4", export_style: dict = None):
         """
         初始化转换器
         
@@ -38,10 +38,12 @@ class MarkdownToWordConverter:
         self.style = style
         self.page_size = page_size
         self.doc = None
+
+        self.export_style = export_style if isinstance(export_style, dict) else {}
         
         # 初始化各处理器
-        self.image_handler = ImageHandler(base_dir)
-        self.table_handler = TableHandler()
+        self.image_handler = ImageHandler(base_dir, style_config=self.export_style)
+        self.table_handler = TableHandler(style_config=self.export_style)
         self.math_handler = MathHandler()
         self.code_handler = CodeHandler()
         self.list_handler = ListHandler()
@@ -96,7 +98,7 @@ class MarkdownToWordConverter:
         """
         # 创建新文档
         self.doc = Document()
-        setup_document_styles(self.doc, style=self.style, page_size=self.page_size)
+        setup_document_styles(self.doc, style=self.style, page_size=self.page_size, style_overrides=self.export_style)
         
         # 预处理文本
         markdown_text = clean_text(markdown_text)
@@ -709,7 +711,10 @@ class MarkdownToWordConverter:
                 self._add_hyperlink(paragraph, elem.url, elem.content)
             
             elif elem.type == InlineType.IMAGE:
-                paragraph.add_run(f'[图片: {elem.content}]')
+                if elem.url:
+                    self.image_handler.add_inline_image(paragraph, elem.url, elem.content)
+                else:
+                    paragraph.add_run(f'[图片: {elem.content}]')
             
             elif elem.type == InlineType.STRIKETHROUGH:
                 run = paragraph.add_run(elem.content)
@@ -750,8 +755,9 @@ class MarkdownToWordConverter:
         original_bold = run.bold
         original_italic = run.italic
         
-        run.font.size = FONT_SIZES['xiao_si']  # 小四
-        run.font.name = FONTS['body_en']  # Times New Roman
+        body_size = self.export_style.get('body_size_pt')
+        run.font.size = Pt(float(body_size)) if body_size is not None else FONT_SIZES['xiao_si']
+        run.font.name = self.export_style.get('body_en', FONTS['body_en'])
         
         # 根据参数决定是否保留原有样式
         if keep_style:
@@ -770,7 +776,7 @@ class MarkdownToWordConverter:
         if rFonts is None:
             rFonts = OxmlElement('w:rFonts')
             rPr.insert(0, rFonts)
-        rFonts.set(qn('w:eastAsia'), FONTS['body_cn'])  # 宋体
+        rFonts.set(qn('w:eastAsia'), self.export_style.get('body_cn', FONTS['body_cn']))
     
     def _add_hyperlink(self, paragraph, url: str, text: str) -> None:
         """添加可点击的超链接"""
@@ -786,21 +792,28 @@ class MarkdownToWordConverter:
         new_run = OxmlElement('w:r')
         rPr = OxmlElement('w:rPr')
         
-        # 设置蓝色和下划线
+        # 设置颜色和下划线
+        color_val = str(self.export_style.get('hyperlink_color', '0000FF')).lstrip('#').upper()
         color = OxmlElement('w:color')
-        color.set(qn('w:val'), '0000FF')
+        color.set(qn('w:val'), color_val)
         rPr.append(color)
         
         underline = OxmlElement('w:u')
-        underline.set(qn('w:val'), 'single')
+        underline_val = 'single' if bool(self.export_style.get('hyperlink_underline', True)) else 'none'
+        underline.set(qn('w:val'), underline_val)
         rPr.append(underline)
         
         # 设置字体大小
+        link_size_pt = self.export_style.get('hyperlink_size_pt', self.export_style.get('body_size_pt', 12))
+        try:
+            half_points = str(int(float(link_size_pt) * 2))
+        except Exception:
+            half_points = '24'
         sz = OxmlElement('w:sz')
-        sz.set(qn('w:val'), '24')  # 12pt = 24 half-points
+        sz.set(qn('w:val'), half_points)
         rPr.append(sz)
         szCs = OxmlElement('w:szCs')
-        szCs.set(qn('w:val'), '24')
+        szCs.set(qn('w:val'), half_points)
         rPr.append(szCs)
         
         new_run.append(rPr)
