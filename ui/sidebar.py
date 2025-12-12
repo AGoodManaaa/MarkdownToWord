@@ -30,7 +30,7 @@ class OutlineView(ctk.CTkFrame):
         self.outline_frame = ctk.CTkScrollableFrame(
             self, fg_color='transparent', corner_radius=0
         )
-        self.outline_frame.pack(fill='both', expand=True, padx=5)
+        self.outline_frame.pack(fill='both', expand=True, padx=8)
     
     def update_outline(self, markdown_text: str):
         """更新大纲"""
@@ -65,9 +65,10 @@ class OutlineView(ctk.CTkFrame):
                     anchor='w',
                     fg_color='transparent',
                     text_color=COLORS['text_primary'] if level <= 2 else COLORS['text_secondary'],
-                    hover_color=COLORS['border'],
+                    hover_color=COLORS['highlight'],
                     font=ctk.CTkFont(size=12 if level <= 2 else 11),
                     height=28,
+                    corner_radius=10,
                     command=lambda ln=i+1: self._on_click(ln)
                 )
                 btn.pack(fill='x', pady=1)
@@ -100,7 +101,7 @@ class RecentFilesView(ctk.CTkFrame):
         self.files_frame = ctk.CTkScrollableFrame(
             self, fg_color='transparent', corner_radius=0
         )
-        self.files_frame.pack(fill='both', expand=True, padx=5)
+        self.files_frame.pack(fill='both', expand=True, padx=8)
     
     def update_files(self, files: list):
         """更新文件列表"""
@@ -118,9 +119,10 @@ class RecentFilesView(ctk.CTkFrame):
                     anchor='w',
                     fg_color='transparent',
                     text_color=COLORS['text_primary'],
-                    hover_color=COLORS['border'],
+                    hover_color=COLORS['highlight'],
                     font=ctk.CTkFont(size=12),
                     height=28,
+                    corner_radius=10,
                     command=lambda fp=filepath: self._on_click(fp)
                 )
                 btn.pack(fill='x', pady=1)

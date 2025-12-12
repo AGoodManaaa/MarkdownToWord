@@ -186,13 +186,13 @@ class App(ctk.CTk):
             btn = ctk.CTkButton(
                 toolbar_frame,
                 text=icon,
-                width=36,
-                height=32,
-                corner_radius=8,
+                width=38,
+                height=34,
+                corner_radius=10,
                 fg_color="transparent",
                 hover_color=COLORS['primary_hover'],
                 text_color="white",
-                font=ctk.CTkFont(size=16),
+                font=ctk.CTkFont(size=15, weight="bold"),
                 command=cmd,
             )
             btn.pack(side="left", padx=2)
@@ -205,13 +205,13 @@ class App(ctk.CTk):
         self.insert_btn = ctk.CTkButton(
             toolbar_frame,
             text="➕",
-            width=36,
-            height=32,
-            corner_radius=8,
+            width=38,
+            height=34,
+            corner_radius=10,
             fg_color=COLORS['success'],
-            hover_color="#059669",
+            hover_color="#16A34A",
             text_color="white",
-            font=ctk.CTkFont(size=16),
+            font=ctk.CTkFont(size=15, weight="bold"),
             command=lambda: None  # 占位
         )
         self.insert_btn.pack(side="left", padx=2)
@@ -230,10 +230,10 @@ class App(ctk.CTk):
             fg_color="transparent",
             text_color="white",
             hover_color=COLORS['primary_hover'],
-            corner_radius=8,
-            width=36,
-            height=32,
-            font=ctk.CTkFont(size=16)
+            corner_radius=10,
+            width=38,
+            height=34,
+            font=ctk.CTkFont(size=15, weight="bold")
         )
         self.sidebar_btn.pack(side="left", padx=3)
         self._header_default_buttons.append(self.sidebar_btn)
@@ -247,9 +247,9 @@ class App(ctk.CTk):
             fg_color="transparent",
             text_color="white",
             hover_color=COLORS['primary_hover'],
-            corner_radius=8,
-            width=36,
-            height=32,
+            corner_radius=10,
+            width=38,
+            height=34,
             font=ctk.CTkFont(size=12, weight="bold")
         )
         self.font_minus_btn.pack(side="left", padx=1)
@@ -263,9 +263,9 @@ class App(ctk.CTk):
             fg_color="transparent",
             text_color="white",
             hover_color=COLORS['primary_hover'],
-            corner_radius=8,
-            width=36,
-            height=32,
+            corner_radius=10,
+            width=38,
+            height=34,
             font=ctk.CTkFont(size=12, weight="bold")
         )
         self.font_plus_btn.pack(side="left", padx=1)
@@ -280,9 +280,9 @@ class App(ctk.CTk):
             fg_color="transparent",
             text_color="white",
             hover_color=COLORS['primary_hover'],
-            corner_radius=8,
-            width=36,
-            height=32
+            corner_radius=10,
+            width=38,
+            height=34
         )
         self.theme_btn.pack(side="left", padx=3)
         self._header_default_buttons.append(self.theme_btn)
@@ -295,9 +295,9 @@ class App(ctk.CTk):
             fg_color="transparent",
             text_color="white",
             hover_color=COLORS['primary_hover'],
-            corner_radius=8,
-            width=36,
-            height=32,
+            corner_radius=10,
+            width=38,
+            height=34,
         )
         self.export_style_header_btn.pack(side="left", padx=3)
         self._header_default_buttons.append(self.export_style_header_btn)
@@ -399,10 +399,12 @@ class App(ctk.CTk):
                     text=text,
                     width=26,
                     height=22,
-                    corner_radius=4,
-                    fg_color=COLORS['bg_light'],
+                    corner_radius=8,
+                    fg_color=COLORS['bg_card'],
                     text_color=COLORS['text_primary'],
-                    hover_color=COLORS['border'],
+                    hover_color=COLORS['highlight'],
+                    border_width=1,
+                    border_color=COLORS['border'],
                     font=ctk.CTkFont(size=10, weight="bold"),
                     command=lambda t=insert_text: self.insert_text(t)
                 )
@@ -447,36 +449,42 @@ class App(ctk.CTk):
         # 底部操作按钮
         btn_frame = ctk.CTkFrame(self.preview_card, fg_color="transparent", height=45)
         btn_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+        left_group = ctk.CTkFrame(btn_frame, fg_color="transparent")
+        left_group.pack(side="left")
+
+        right_group = ctk.CTkFrame(btn_frame, fg_color="transparent")
+        right_group.pack(side="right")
         
         # 导出Word按钮
         self.export_btn = ModernButton(
-            btn_frame,
-            text="📄 导出",
+            left_group,
+            text="� 导出",
             command=self.export_to_word,
             style="primary",
-            width=80
+            width=92
         )
-        self.export_btn.pack(side="left", padx=(0, 6))
+        self.export_btn.pack(side="left", padx=(0, 8))
 
         # 取消导出按钮（导出中启用）
         self.cancel_export_btn = ModernButton(
-            btn_frame,
+            left_group,
             text="⛔ 取消",
             command=self.cancel_export,
-            style="outline",
-            width=80,
+            style="danger",
+            width=86,
         )
-        self.cancel_export_btn.pack(side="left", padx=(0, 6))
+        self.cancel_export_btn.pack(side="left", padx=(0, 8))
         try:
             self.cancel_export_btn.configure(state="disabled")
         except Exception:
             pass
 
         self.export_style_btn = ModernButton(
-            btn_frame,
+            left_group,
             text="⚙",
             command=self.open_export_style_settings,
-            style="outline",
+            style="ghost",
             width=36,
         )
         self.export_style_btn.pack(side="left", padx=(0, 6))
@@ -486,10 +494,10 @@ class App(ctk.CTk):
             pass
         
         self.export_history_btn = ModernButton(
-            btn_frame,
+            left_group,
             text="🕘",
             command=self.show_export_history,
-            style="outline",
+            style="ghost",
             width=36,
         )
         self.export_history_btn.pack(side="left", padx=(0, 6))
@@ -500,33 +508,33 @@ class App(ctk.CTk):
         
         # 复制到剪贴板按钮
         self.copy_btn = ModernButton(
-            btn_frame,
+            left_group,
             text="📋 复制",
             command=self.copy_to_clipboard,
-            style="secondary",
-            width=80
+            style="ghost",
+            width=86
         )
         self.copy_btn.pack(side="left", padx=(0, 6))
         
         # 关闭预览按钮
         self.hide_preview_btn = ModernButton(
-            btn_frame,
-            text="✕ 关闭预览",
+            right_group,
+            text="✕ 关闭",
             command=self.toggle_preview,
-            style="outline",
-            width=90
+            style="ghost",
+            width=80
         )
         self.hide_preview_btn.pack(side="right")
         
         # 清空按钮
         self.clear_btn = ModernButton(
-            btn_frame,
+            right_group,
             text="🗑️",
             command=self.clear_all,
-            style="outline",
+            style="danger",
             width=36
         )
-        self.clear_btn.pack(side="right", padx=(0, 6))
+        self.clear_btn.pack(side="right", padx=(0, 8))
     
     def _create_status_bar(self):
         """创建状态栏"""
