@@ -5,8 +5,7 @@ import tempfile
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
-import warnings
-warnings.filterwarnings('ignore')  # 抑制所有警告
+
 
 # 导入转换器和主题模块
 from ui.theme import COLORS, COLORS_LIGHT, COLORS_DARK, load_config, save_config
@@ -42,6 +41,7 @@ from ui.clipboard import (
     copy_as_html_for_app,
     show_copy_toast_for_app,
 )
+from ui.export_history import show_export_history_dialog
 
 
 class App(ctk.CTk):
@@ -79,6 +79,9 @@ class App(ctk.CTk):
         
         # 当前文件路径
         self.current_file = None
+
+        # 导出取消标记（线程间通信）
+        self._export_cancel_event = None
         
         # 防抖定时器ID
         self._debounce_id = None
@@ -117,6 +120,7 @@ class App(ctk.CTk):
         self.bind('<Control-s>', lambda e: self.save_file())  # 保存源文件
         self.bind('<Control-Shift-s>', lambda e: self.export_to_word())  # 导出Word
         self.bind('<Control-Shift-c>', lambda e: self.copy_to_clipboard())
+        self.bind('<Control-j>', lambda e: self.show_export_history())
         self.bind('<Control-f>', lambda e: self.show_search_dialog())
         self.bind('<Control-h>', lambda e: self.show_search_dialog())
         self.bind('<Control-plus>', lambda e: self.change_font_size(1))
@@ -173,6 +177,8 @@ class App(ctk.CTk):
             ("💾", "保存", self.save_file, "Ctrl+S"),
             ("🔍", "搜索", self.show_search_dialog, "Ctrl+F"),
             ("👁", "预览", self.toggle_preview, "Ctrl+P"),
+            ("📤", "导出", self.export_to_word, "Ctrl+Shift+S"),
+            ("🕘", "历史", self.show_export_history, "Ctrl+J"),
         ]
         
         self.preview_btn = None
@@ -452,6 +458,20 @@ class App(ctk.CTk):
         )
         self.export_btn.pack(side="left", padx=(0, 6))
 
+        # 取消导出按钮（导出中启用）
+        self.cancel_export_btn = ModernButton(
+            btn_frame,
+            text="⛔ 取消",
+            command=self.cancel_export,
+            style="outline",
+            width=80,
+        )
+        self.cancel_export_btn.pack(side="left", padx=(0, 6))
+        try:
+            self.cancel_export_btn.configure(state="disabled")
+        except Exception:
+            pass
+
         self.export_style_btn = ModernButton(
             btn_frame,
             text="⚙",
@@ -462,6 +482,19 @@ class App(ctk.CTk):
         self.export_style_btn.pack(side="left", padx=(0, 6))
         try:
             self.tooltip.add_tooltip(self.export_style_btn, "导出样式设置")
+        except Exception:
+            pass
+        
+        self.export_history_btn = ModernButton(
+            btn_frame,
+            text="🕘",
+            command=self.show_export_history,
+            style="outline",
+            width=36,
+        )
+        self.export_history_btn.pack(side="left", padx=(0, 6))
+        try:
+            self.tooltip.add_tooltip(self.export_history_btn, "导出历史")
         except Exception:
             pass
         
@@ -584,26 +617,42 @@ def hello():
     
     def _on_preview_change(self, markdown_text: str):
         self.preview_sync.on_preview_change(markdown_text)
-    
+
     def open_file(self):
         self.file_ops.open_file()
-    
+
     def export_to_word(self):
         """导出为Word文档（委托给导出 helper）。"""
         export_to_word_for_app(self)
-    
+
+    def show_export_history(self):
+        """显示导出历史。"""
+        try:
+            show_export_history_dialog(self)
+        except Exception:
+            pass
+
+    def cancel_export(self):
+        """请求取消导出（供导出线程轮询）。"""
+        try:
+            if self._export_cancel_event is not None:
+                self._export_cancel_event.set()
+                self.update_status("⛔ 已请求取消导出...")
+        except Exception:
+            pass
+
     def _show_export_options(self, content: str):
         """显示导出选项对话框（委托给导出 helper）。"""
         show_export_options_for_app(self, content)
-    
+
     def _do_export(self, content: str, style: str, page_size: str):
         """执行导出（委托给导出 helper）。"""
         do_export_for_app(self, content, style, page_size)
-    
+
     def on_export_success(self, file_path):
         """导出成功回调（委托给导出 helper）。"""
         on_export_success_for_app(self, file_path)
-    
+
     def _open_file_cross_platform(self, file_path: str):
         """跨平台打开文件"""
         import subprocess

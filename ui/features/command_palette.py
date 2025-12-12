@@ -118,6 +118,7 @@ class CommandPalette:
             ("打开文件    Ctrl+O", a.open_file),
             ("保存文件    Ctrl+S", a.save_file),
             ("导出 Word    Ctrl+Shift+S", a.export_to_word),
+            ("导出历史    Ctrl+J", getattr(a, 'show_export_history', a.export_to_word)),
             ("导出样式设置", a.open_export_style_settings),
             ("复制到剪贴板    Ctrl+Shift+C", a.copy_to_clipboard),
             ("搜索/替换    Ctrl+F", a.show_search_dialog),

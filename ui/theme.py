@@ -147,6 +147,10 @@ DEFAULT_CONFIG = {
     'sidebar_visible': True,
     'sidebar_width': 250,
     'export_style': DEFAULT_EXPORT_STYLE,
+    'export_history': [],
+    'last_export_style': 'standard',
+    'last_export_page_size': 'a4',
+    'preflight_check_remote_images': False,
 }
 
 
