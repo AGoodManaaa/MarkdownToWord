@@ -13,17 +13,40 @@ from ui.theme import COLORS
 
 class MarkdownPreview(ctk.CTkFrame):
     """可编辑的Markdown预览组件 - 支持双向同步"""
-    def __init__(self, master, on_content_change=None, **kwargs):
+    def __init__(self, master, on_content_change=None, app=None, **kwargs):
         super().__init__(master, fg_color=COLORS['bg_card'], corner_radius=12, **kwargs)
+
+        # 预览缩放（仅影响预览区字体/样式）
+        self._scale = 1.0
+        self._base_sizes = {
+            'body': 16,
+            'h1': 28,
+            'h2': 22,
+            'h3': 18,
+            'h4': 16,
+            'code': 10,
+            'math': 16,
+            'math_block': 18,
+            'supsub': 9,
+            'quote': 11,
+            'list_item': 16,
+        }
         
         # 内容变化回调
         self.on_content_change = on_content_change
+
+        # App 引用：用于“复制到 Word”
+        self.app = app
         
         # 是否正在更新（防止循环触发）
         self._updating = False
         
         # 存储段落信息：{line_start: {'type': 'paragraph', 'md_line': 1, 'format': []}}
         self.paragraph_map = {}
+
+        # 公式 token：用于把“图片公式”安全回写为 Markdown（不改渲染逻辑）
+        self._math_token_counter = 0
+        self._math_token_map = {}
         
         # 使用 Text widget 支持富文本，整体模拟排版后的页面效果
         self.text = tk.Text(
@@ -60,7 +83,10 @@ class MarkdownPreview(ctk.CTkFrame):
         
         # 绑定编辑事件
         self.text.bind('<KeyRelease>', self._on_text_change)
-        self.text.bind('<ButtonRelease-1>', self._on_text_change)
+        try:
+            self.text.edit_modified(False)
+        except Exception:
+            pass
         
         # 右键菜单
         self._create_context_menu()
@@ -76,11 +102,157 @@ class MarkdownPreview(ctk.CTkFrame):
         self.context_menu.add_command(label="下标 X₂", command=self._toggle_subscript)
         self.context_menu.add_separator()
         self.context_menu.add_command(label="复制", command=lambda: self.text.event_generate('<<Copy>>'))
+        self.context_menu.add_command(label="复制选中到Word（保持格式）", command=self._copy_selection_to_word)
         self.context_menu.add_command(label="粘贴", command=lambda: self.text.event_generate('<<Paste>>'))
         
         self.text.bind('<Button-3>', self._show_context_menu)
         self.text.bind('<Control-b>', lambda e: self._toggle_bold())
         self.text.bind('<Control-i>', lambda e: self._toggle_italic())
+
+    def _copy_selection_to_word(self):
+        try:
+            if self.app is None:
+                return
+
+            md = self.get_selection_as_markdown()
+            if not (md or '').strip():
+                return
+            try:
+                self.app.copy_markdown_to_clipboard(md)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def get_selection_as_markdown(self) -> str:
+        """把预览区选中内容转换为 Markdown（含公式 token 还原）。"""
+        try:
+            sel_first = self.text.index(tk.SEL_FIRST)
+            sel_last = self.text.index(tk.SEL_LAST)
+        except tk.TclError:
+            return ''
+
+        # 扩大一丢丢范围，尽量把紧贴图片公式的隐藏 token 包进来
+        start = sel_first
+        end = sel_last
+        try:
+            start = self.text.index(f"{sel_first} -1c")
+        except Exception:
+            start = sel_first
+        try:
+            end = self.text.index(f"{sel_last} +1c")
+        except Exception:
+            end = sel_last
+
+        # 逐行转换，保留行内格式（粗体/斜体/代码/上下标）
+        try:
+            start_line = int(str(start).split('.')[0])
+            start_col = int(str(start).split('.')[1])
+            end_line = int(str(end).split('.')[0])
+            end_col = int(str(end).split('.')[1])
+        except Exception:
+            return ''
+
+        lines_out = []
+        for ln in range(start_line, end_line + 1):
+            if ln == start_line:
+                sc = start_col
+            else:
+                sc = 0
+
+            if ln == end_line:
+                ec = end_col
+            else:
+                try:
+                    ec = int(str(self.text.index(f"{ln}.end")).split('.')[1])
+                except Exception:
+                    ec = 0
+
+            try:
+                line_md = self._format_range_line(ln, sc, ec)
+            except Exception:
+                line_md = ''
+            lines_out.append(line_md)
+
+        out = "\n".join(lines_out).strip('\n')
+        try:
+            out = self._restore_math_tokens(out)
+        except Exception:
+            pass
+        return out
+
+    def _format_range_line(self, line_num: int, start_col: int, end_col: int) -> str:
+        if end_col <= start_col:
+            return ''
+
+        try:
+            raw = self.text.get(f"{line_num}.{start_col}", f"{line_num}.{end_col}")
+        except Exception:
+            raw = ''
+        if raw == '':
+            return ''
+
+        # 标题：只在从行首开始选中时才补 #
+        prefix = ''
+        try:
+            if start_col == 0:
+                tags0 = set(self.text.tag_names(f"{line_num}.0"))
+                if 'h1' in tags0:
+                    prefix = '# '
+                elif 'h2' in tags0:
+                    prefix = '## '
+                elif 'h3' in tags0:
+                    prefix = '### '
+                elif 'h4' in tags0:
+                    prefix = '#### '
+        except Exception:
+            prefix = ''
+
+        segments = []
+        current_text = ''
+        current_tags = set()
+
+        for offset, ch in enumerate(raw):
+            pos = f"{line_num}.{start_col + offset}"
+            char_tags = set(self.text.tag_names(pos))
+            format_tags = char_tags & {'bold', 'italic', 'strikethrough', 'code', 'superscript', 'subscript', 'math_token'}
+
+            if format_tags != current_tags:
+                if current_text:
+                    segments.append((current_text, current_tags))
+                current_text = ch
+                current_tags = format_tags
+            else:
+                current_text += ch
+
+        if current_text:
+            segments.append((current_text, current_tags))
+
+        result = ''
+        for text, tags in segments:
+            formatted = text
+            # token 直接透传，后面统一 restore
+            if 'math_token' in tags:
+                result += formatted
+                continue
+
+            if 'bold' in tags and 'italic' in tags:
+                formatted = f"***{text}***"
+            elif 'bold' in tags:
+                formatted = f"**{text}**"
+            elif 'italic' in tags:
+                formatted = f"*{text}*"
+            if 'strikethrough' in tags:
+                formatted = f"~~{formatted}~~"
+            if 'code' in tags:
+                formatted = f"`{text}`"
+            if 'superscript' in tags:
+                formatted = f"<sup>{text}</sup>"
+            if 'subscript' in tags:
+                formatted = f"<sub>{text}</sub>"
+            result += formatted
+
+        return prefix + result
     
     def _show_context_menu(self, event):
         """显示右键菜单"""
@@ -177,6 +349,12 @@ class MarkdownPreview(ctk.CTkFrame):
         """文本变化时触发同步"""
         if self._updating:
             return
+        # 只有真实编辑（内容被修改）才允许回写，避免点击公式图片/选中导致覆盖 Markdown
+        try:
+            if not bool(self.text.edit_modified()):
+                return
+        except Exception:
+            pass
         # 用防抖延迟同步
         if hasattr(self, '_sync_timer'):
             self.after_cancel(self._sync_timer)
@@ -192,6 +370,10 @@ class MarkdownPreview(ctk.CTkFrame):
             markdown_text = self._convert_to_markdown()
             if markdown_text:
                 self.on_content_change(markdown_text)
+            try:
+                self.text.edit_modified(False)
+            except Exception:
+                pass
         except Exception:
             pass
     
@@ -226,7 +408,51 @@ class MarkdownPreview(ctk.CTkFrame):
                 formatted_line = self._format_line(line_num, line)
                 result.append(formatted_line)
         
-        return '\n'.join(result)
+        md = '\n'.join(result)
+        try:
+            md = self._restore_math_tokens(md)
+        except Exception:
+            pass
+        return md
+
+    def _new_math_token(self, formula: str, inline: bool) -> str:
+        """生成用于回写的“隐藏公式文本”。
+
+        这里不再使用 [[MATH:n]] 占位符，避免占位符泄漏到 Markdown 源文中。
+        """
+        f = (formula or '').strip()
+        if not f:
+            return ''
+        if inline:
+            return f"${f}$"
+        return f"$$\n{f}\n$$"
+
+    def _restore_math_tokens(self, text: str) -> str:
+        """把 token 还原为 Markdown 公式。"""
+        if not text:
+            return text
+        mp = getattr(self, '_math_token_map', None) or {}
+        if not mp:
+            # 兼容历史遗留的 [[MATH:n]] 占位符：无法还原时至少清除，避免污染 Markdown 源文
+            try:
+                import re
+                return re.sub(r"\[\[MATH:\d+\]\]", "", text)
+            except Exception:
+                return text
+        out = text
+        # token 数量通常不多，直接 replace
+        for token, repl in mp.items():
+            try:
+                out = out.replace(token, repl)
+            except Exception:
+                pass
+        # 再清一次残留的占位符（避免映射不完整时泄漏）
+        try:
+            import re
+            out = re.sub(r"\[\[MATH:\d+\]\]", "", out)
+        except Exception:
+            pass
+        return out
     
     def _format_line(self, line_num: int, line: str) -> str:
         """处理行内格式（粗体、斜体、上下标等）"""
@@ -283,37 +509,75 @@ class MarkdownPreview(ctk.CTkFrame):
     
     def _setup_tags(self):
         """配置文本标签样式 - 模拟Word中的样式"""
+        def sz(key: str) -> int:
+            try:
+                base = int(self._base_sizes.get(key, 16))
+                v = int(round(base * float(self._scale or 1.0)))
+                return max(8, min(60, v))
+            except Exception:
+                return 16
+
+        # 边距也随缩放微调，并按当前预览宽度做封顶，避免挤压导致异常换行
+        def margin(base: int, max_frac: float = 0.20) -> int:
+            try:
+                # 缩放 < 1 时边距减小更多，避免窄屏换行
+                s = float(self._scale or 1.0)
+                if s < 1.0:
+                    factor = 0.5 + 0.5 * s  # 0.9 -> 0.95, 更小时更激进
+                else:
+                    factor = s
+                v = max(4, int(round(base * factor)))
+
+                w = 0
+                try:
+                    w = int(self.text.winfo_width() or 0)
+                except Exception:
+                    w = 0
+                if w > 0:
+                    cap = int(w * float(max_frac))
+                    if cap > 0:
+                        v = min(v, cap)
+                return v
+            except Exception:
+                return base
+
+        # 更新 Text 默认字体（不依赖 tag 的部分）
+        try:
+            self.text.configure(font=('宋体', sz('body')))
+        except Exception:
+            pass
+
         # 标题样式 - 相比正文放大一到两个级别，比例更接近论文
-        self.text.tag_configure('h1', font=('黑体', 28, 'bold'), justify='center', spacing1=28, spacing3=16)
-        self.text.tag_configure('h2', font=('黑体', 22, 'bold'), justify='center', spacing1=22, spacing3=14)
-        self.text.tag_configure('h3', font=('黑体', 18, 'bold'), spacing1=16, spacing3=12)
-        self.text.tag_configure('h4', font=('黑体', 16, 'bold'), spacing1=14, spacing3=10)
+        self.text.tag_configure('h1', font=('黑体', sz('h1'), 'bold'), justify='center', spacing1=28, spacing3=16)
+        self.text.tag_configure('h2', font=('黑体', sz('h2'), 'bold'), justify='center', spacing1=22, spacing3=14)
+        self.text.tag_configure('h3', font=('黑体', sz('h3'), 'bold'), spacing1=16, spacing3=12)
+        self.text.tag_configure('h4', font=('黑体', sz('h4'), 'bold'), spacing1=14, spacing3=10)
         
         # 正文样式：统一控制左右页边距和段前段后间距，模拟 LaTeX/Word 正文
         # 首行缩进2字符（16pt字号 × 2 ≈ 32像素）
         self.text.tag_configure(
             'body',
-            font=('宋体', 16),
-            lmargin1=112,  # 左边距（首行）= 80 + 32（首行缩进）
-            lmargin2=80,   # 左边距（后续行）
-            rmargin=80,    # 右边距
+            font=('宋体', sz('body')),
+            lmargin1=margin(112, 0.22),  # 左边距（首行）= 80 + 32（首行缩进）
+            lmargin2=margin(80, 0.18),   # 左边距（后续行）
+            rmargin=margin(80, 0.18),    # 右边距
             spacing1=4,    # 段前
             spacing3=4,    # 段后
         )
         
         # 粗体、斜体（保持与正文字号一致）
-        self.text.tag_configure('bold', font=('宋体', 16, 'bold'))
-        self.text.tag_configure('italic', font=('宋体', 16, 'italic'))
-        self.text.tag_configure('bold_italic', font=('宋体', 16, 'bold italic'))
+        self.text.tag_configure('bold', font=('宋体', sz('body'), 'bold'))
+        self.text.tag_configure('italic', font=('宋体', sz('body'), 'italic'))
+        self.text.tag_configure('bold_italic', font=('宋体', sz('body'), 'bold italic'))
         
         # 代码（白色底色）
-        self.text.tag_configure('code', font=('Consolas', 10), background='#F5F5F5')
-        self.text.tag_configure('code_block', font=('Consolas', 10), background='#FAFAFA', foreground='#1F2937')
+        self.text.tag_configure('code', font=('Consolas', sz('code')), background='#F5F5F5')
+        self.text.tag_configure('code_block', font=('Consolas', sz('code')), background='#FAFAFA', foreground='#1F2937')
         
         # 公式：优先使用 Cambria Math，回退到其他数学字体
         math_font = self._get_math_font()
-        self.text.tag_configure('math', font=(math_font, 16), foreground='#1a1a2e')
-        self.text.tag_configure('math_block', font=(math_font, 18), foreground='#1a1a2e', justify='center', spacing1=8, spacing3=8)
+        self.text.tag_configure('math', font=(math_font, sz('math')), foreground='#1a1a2e')
+        self.text.tag_configure('math_block', font=(math_font, sz('math_block')), foreground='#1a1a2e', justify='center', spacing1=8, spacing3=8)
         
         # 链接
         self.text.tag_configure('link', foreground='#0000FF', underline=True)
@@ -322,28 +586,52 @@ class MarkdownPreview(ctk.CTkFrame):
         self.text.tag_configure('strikethrough', overstrike=True)
         
         # 上标和下标
-        self.text.tag_configure('superscript', font=('宋体', 9), offset=6)  # 上标：更小字体，向上偏移
-        self.text.tag_configure('subscript', font=('宋体', 9), offset=-3)  # 下标：更小字体，向下偏移
+        self.text.tag_configure('superscript', font=('宋体', sz('supsub')), offset=6)  # 上标：更小字体，向上偏移
+        self.text.tag_configure('subscript', font=('宋体', sz('supsub')), offset=-3)  # 下标：更小字体，向下偏移
         
         # 引用
-        self.text.tag_configure('quote', font=('宋体', 11, 'italic'), foreground='#6B7280', lmargin1=30, lmargin2=30)
+        self.text.tag_configure('quote', font=('宋体', sz('quote'), 'italic'), foreground='#6B7280', lmargin1=margin(30, 0.12), lmargin2=margin(30, 0.12))
         
         # 列表：在正文基础上增加缩进
         self.text.tag_configure(
             'list_item',
-            font=('宋体', 16),
-            lmargin1=36,
-            lmargin2=60,
+            font=('宋体', sz('list_item')),
+            lmargin1=margin(36, 0.12),
+            lmargin2=margin(60, 0.16),
             spacing1=2,
             spacing3=2,
         )
 
         # 表格整体居中显示
         self.text.tag_configure('table_block', justify='center')
+
+        # 隐藏公式 token（token 仍会被 Text.get() 取到，用于回写 Markdown）
+        try:
+            self.text.tag_configure('math_token', elide=True)
+        except Exception:
+            try:
+                self.text.tag_configure('math_token', foreground=self.text.cget('bg'))
+            except Exception:
+                pass
         
         # 提高上下标标签的优先级，确保字体大小生效
         self.text.tag_raise('superscript')
         self.text.tag_raise('subscript')
+
+    def set_scale(self, scale: float):
+        """设置预览缩放比例（仅预览区）。"""
+        try:
+            scale = float(scale)
+        except Exception:
+            scale = 1.0
+        scale = min(1.35, max(0.9, scale))
+        if abs(scale - float(getattr(self, '_scale', 1.0))) < 0.01:
+            return
+        self._scale = scale
+        try:
+            self._setup_tags()
+        except Exception:
+            pass
     
     def _get_math_font(self) -> str:
         """获取可用的数学字体，按优先级尝试"""
@@ -363,6 +651,8 @@ class MarkdownPreview(ctk.CTkFrame):
         # 清除旧的公式图片，重置计数器
         self.math_images = []
         self.equation_counter = 0
+        self._math_token_counter = 0
+        self._math_token_map = {}
         
         # 预处理文本
         markdown_text = convert_latex_delimiters(markdown_text)  # 转换 \(...\) 和 \[...\] 格式
@@ -445,6 +735,12 @@ class MarkdownPreview(ctk.CTkFrame):
                 if img:
                     self.math_images.append(img)
                     self.text.image_create('end', image=img)
+                    # 插入隐藏 token，确保回写 Markdown 时不会丢公式
+                    try:
+                        token = self._new_math_token(formula_text, inline=True)
+                        self.text.insert('end', token, ('math_token',))
+                    except Exception:
+                        pass
                 else:
                     self.text.insert('end', formula_text, tuple(tags + ['math']))
             
@@ -486,7 +782,22 @@ class MarkdownPreview(ctk.CTkFrame):
 
             # 行内公式略小，块级公式略大，以匹配正文 16pt 的视觉大小
             render_fontsize = 14 if is_inline else 18
-            formula = latex.strip()
+
+            formula = (latex or '').strip()
+            # 兼容 $...$/$$...$$ 包裹：先剥离，避免变成 $$...$$ 导致解析失败
+            if formula.startswith('$$') and formula.endswith('$$') and len(formula) >= 4:
+                formula = formula[2:-2].strip()
+            elif formula.startswith('$') and formula.endswith('$') and len(formula) >= 2:
+                formula = formula[1:-1].strip()
+
+            # 兼容示例中双反斜杠（\int），渲染时归一为 \int
+            try:
+                formula = formula.replace('\\\\', '\\')
+            except Exception:
+                pass
+
+            if not formula:
+                return None
 
             text = ax.text(
                 0.5,
@@ -541,6 +852,12 @@ class MarkdownPreview(ctk.CTkFrame):
             self.math_images.append(img)
             self.text.insert('end', '          ')
             self.text.image_create('end', image=img)
+            # 插入隐藏 token，确保回写 Markdown 时不会丢公式
+            try:
+                token = self._new_math_token(formula_text, inline=False)
+                self.text.insert('end', token, ('math_token',))
+            except Exception:
+                pass
             self.text.insert('end', f'    ({self.equation_counter})\n')
         else:
             # 直接插入文本，使用 math_block 标签居中
@@ -607,6 +924,14 @@ class MarkdownPreview(ctk.CTkFrame):
         self.text.insert('end', '\n')
         self.text.window_create('end', window=container)
         self.text.insert('end', '\n\n')
+
+        # 插入隐藏的表格 Markdown，确保回写 Markdown 时不会丢表格
+        try:
+            raw = (table_text or '').strip('\n')
+            if raw:
+                self.text.insert('end', raw + '\n\n', ('math_token',))
+        except Exception:
+            pass
         
         # 设置容器宽度以实现居中（延迟执行以获取实际宽度）
         def center_table():
@@ -699,7 +1024,8 @@ class MarkdownPreview(ctk.CTkFrame):
             indent = '  ' + '    ' * item_level
             
             if is_task:
-                checkbox = '☑' if checked else '☐'
+                # 避免 ☑/☐ 在部分字体下显示为方块导致“乱码/错位”
+                checkbox = '[x]' if checked else '[ ]'
                 self.text.insert('end', f'{indent}{checkbox} ', ('list_item',))
                 self._insert_inline_elements(item_text, extra_tags=['list_item'])
             else:
@@ -707,9 +1033,8 @@ class MarkdownPreview(ctk.CTkFrame):
                     number = get_number_format(item_level, level_counters[item_level])
                     self.text.insert('end', f'{indent}{number} ', ('list_item',))
                 else:
-                    bullets = ['•', '◦', '▪', '‣']
-                    bullet = bullets[min(item_level, len(bullets) - 1)]
-                    self.text.insert('end', f'{indent}{bullet} ', ('list_item',))
+                    # 避免 •/◦ 等符号在部分字体下显示异常
+                    self.text.insert('end', f'{indent}- ', ('list_item',))
                 self._insert_inline_elements(item_text, extra_tags=['list_item'])
             
             self.text.insert('end', '\n')

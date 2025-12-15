@@ -58,6 +58,48 @@ def copy_to_clipboard_for_app(app) -> None:
     threading.Thread(target=copy_task, daemon=True).start()
 
 
+def copy_markdown_to_clipboard_for_app(app, markdown_text: str) -> None:
+    """复制指定 Markdown 文本到剪贴板（Word 兼容）。"""
+    content = markdown_text or ''
+    if not content.strip():
+        messagebox.showwarning("提示", "请先选择需要复制的内容")
+        return
+
+    app.update_status("⏳ 正在生成剪贴板内容...")
+
+    def copy_task() -> None:
+        try:
+            temp_file = tempfile.mktemp(suffix=".docx")
+            base_dir = (
+                os.path.dirname(app.current_file) if app.current_file else os.getcwd()
+            )
+            converter = MarkdownToWordConverter(base_dir=base_dir)
+            converter.convert_text(content)
+            converter.save(temp_file)
+
+            copy_word_to_clipboard_for_app(app, temp_file)
+
+            os.remove(temp_file)
+
+            app.after(
+                0,
+                lambda: app.update_status(
+                    "✅ 已复制到剪贴板，可直接粘贴到Word"
+                ),
+            )
+            app.after(0, lambda: show_copy_toast_for_app(app))
+        except Exception as e:  # noqa: BLE001 - 保持原始广泛捕获
+            app.after(0, lambda: app.update_status(f"❌ 复制失败: {e}"))
+            app.after(
+                0,
+                lambda: messagebox.showerror("错误", f"复制失败:\n{e}"),
+            )
+
+    import threading
+
+    threading.Thread(target=copy_task, daemon=True).start()
+
+
 def copy_word_to_clipboard_for_app(app, docx_path: str) -> None:
     """使用 COM 将 Word 内容复制到剪贴板。"""
     try:

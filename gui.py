@@ -39,6 +39,7 @@ from ui.clipboard import (
     copy_to_clipboard_for_app,
     copy_word_to_clipboard_for_app,
     copy_as_html_for_app,
+    copy_markdown_to_clipboard_for_app,
     show_copy_toast_for_app,
 )
 from ui.export_history import show_export_history_dialog
@@ -443,7 +444,7 @@ class App(ctk.CTk):
         self.preview_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
         
         # 预览组件
-        self.preview = MarkdownPreview(self.preview_card, on_content_change=self._on_preview_change)
+        self.preview = MarkdownPreview(self.preview_card, on_content_change=self._on_preview_change, app=self)
         self.preview.pack(fill="both", expand=True, padx=10, pady=(0, 8))
         
         # 底部操作按钮
@@ -660,6 +661,10 @@ def hello():
     def copy_to_clipboard(self):
         """复制内容到剪贴板（委托给剪贴板 helper）。"""
         copy_to_clipboard_for_app(self)
+
+    def copy_markdown_to_clipboard(self, markdown_text: str):
+        """复制指定 Markdown 到剪贴板（Word 兼容）。"""
+        copy_markdown_to_clipboard_for_app(self, markdown_text)
     
     def _copy_word_to_clipboard(self, docx_path: str):
         """使用 COM 将 Word 内容复制到剪贴板（委托给剪贴板 helper）。"""

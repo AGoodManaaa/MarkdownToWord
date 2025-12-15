@@ -55,6 +55,8 @@ class LineNumberedText(ctk.CTkFrame):
             insertbackground=COLORS['text_primary'],
         )
 
+        self._undo_sep_timer = None
+
         # 兼容旧属性名
         self.text = self._textbox
         
@@ -99,6 +101,24 @@ class LineNumberedText(ctk.CTkFrame):
     def _on_change(self, event=None):
         """内容变化时更新行号"""
         self.after(5, self._update_line_numbers)
+
+        # 让撤销更“一级一级”：对连续输入做轻量防抖后插入 undo 分隔点
+        try:
+            if self._undo_sep_timer is not None:
+                self.after_cancel(self._undo_sep_timer)
+        except Exception:
+            pass
+        try:
+            self._undo_sep_timer = self.after(180, self._insert_undo_separator)
+        except Exception:
+            self._undo_sep_timer = None
+
+    def _insert_undo_separator(self):
+        self._undo_sep_timer = None
+        try:
+            self._textbox.edit_separator()
+        except Exception:
+            pass
     
     def _update_line_numbers(self):
         """更新行号显示"""
