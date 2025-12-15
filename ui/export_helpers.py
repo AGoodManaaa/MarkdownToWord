@@ -257,7 +257,13 @@ def do_export_for_app(app, content: str, style: str, page_size: str) -> None:
     except Exception:
         pass
 
-    app.update_status("⏳ 正在转换...")
+    try:
+        if hasattr(app, 'status_bar_feature') and app.status_bar_feature is not None:
+            app.status_bar_feature.update_progress(0.0, "⏳ 正在转换...")
+        else:
+            app.update_status("⏳ 正在转换...")
+    except Exception:
+        app.update_status("⏳ 正在转换...")
     app.export_btn.configure(state="disabled")
     try:
         if hasattr(app, 'cancel_export_btn'):
@@ -273,7 +279,25 @@ def do_export_for_app(app, content: str, style: str, page_size: str) -> None:
 
     def on_progress(done: int, total: int, block_type: str, start_line: int) -> None:
         try:
-            app.update_status(f"⏳ 正在转换... {done}/{total} ({block_type}, 行{start_line})")
+            p = 0.0
+            if total:
+                p = float(done) / float(total)
+            pct = int(p * 100)
+            msg = f"⏳ 正在转换... {pct}% ({done}/{total})  {block_type}  行{start_line}"
+
+            def _apply() -> None:
+                try:
+                    if hasattr(app, 'status_bar_feature') and app.status_bar_feature is not None:
+                        app.status_bar_feature.update_progress(p, msg)
+                    else:
+                        app.update_status(msg)
+                except Exception:
+                    pass
+
+            try:
+                app.after(0, _apply)
+            except Exception:
+                _apply()
         except Exception:
             pass
 
@@ -303,6 +327,11 @@ def do_export_for_app(app, content: str, style: str, page_size: str) -> None:
 def on_export_success_for_app(app, file_path: str) -> None:
     """导出成功回调。"""
     app.export_btn.configure(state="normal")
+    try:
+        if hasattr(app, 'status_bar_feature') and app.status_bar_feature is not None:
+            app.status_bar_feature.update_progress(None, None)
+    except Exception:
+        pass
     try:
         if hasattr(app, 'cancel_export_btn'):
             app.cancel_export_btn.configure(state="disabled")
@@ -337,6 +366,11 @@ def on_export_cancel_for_app(app) -> None:
     except Exception:
         pass
     try:
+        if hasattr(app, 'status_bar_feature') and app.status_bar_feature is not None:
+            app.status_bar_feature.update_progress(None, None)
+    except Exception:
+        pass
+    try:
         if hasattr(app, 'cancel_export_btn'):
             app.cancel_export_btn.configure(state="disabled")
     except Exception:
@@ -361,6 +395,11 @@ def on_export_cancel_for_app(app) -> None:
 def on_export_error_for_app(app, error: str) -> None:
     """导出失败回调。"""
     app.export_btn.configure(state="normal")
+    try:
+        if hasattr(app, 'status_bar_feature') and app.status_bar_feature is not None:
+            app.status_bar_feature.update_progress(None, None)
+    except Exception:
+        pass
     try:
         if hasattr(app, 'cancel_export_btn'):
             app.cancel_export_btn.configure(state="disabled")

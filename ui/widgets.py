@@ -19,15 +19,18 @@ class ModernButton(ctk.CTkButton):
             'success': (COLORS['success'], '#16A34A'),
             'outline': ('transparent', COLORS['highlight']),
             'ghost': ('transparent', COLORS['highlight']),
-            'danger': (COLORS['danger'], '#DC2626'),
+            'danger': ('transparent', COLORS['highlight']),
         }
         
         fg_color, hover_color = colors.get(style, colors['primary'])
         is_outline = style == 'outline'
         is_ghost = style == 'ghost'
+        is_danger = style == 'danger'
         is_light = is_outline or is_ghost
         text_color = 'white' if not is_light else COLORS['text_primary']
-        border_width = 1 if is_outline else 0
+        border_width = 1 if (is_outline or is_danger) else 0
+        if is_danger:
+            text_color = COLORS['danger']
         
         super().__init__(
             master,
@@ -37,7 +40,7 @@ class ModernButton(ctk.CTkButton):
             hover_color=hover_color,
             text_color=text_color,
             border_width=border_width,
-            border_color=COLORS['border'] if is_outline else None,
+            border_color=(COLORS['border'] if is_outline else (COLORS['danger'] if is_danger else None)),
             corner_radius=14,
             height=38,
             font=ctk.CTkFont(size=13, weight="bold"),
