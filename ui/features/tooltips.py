@@ -42,10 +42,10 @@ class TooltipManager:
                 text=text,
                 bg='#111827',
                 fg='#F9FAFB',
-                padx=10,
-                pady=6,
+                padx=16,
+                pady=10,
                 justify='left',
-                font=('Segoe UI', 10),
+                font=('Segoe UI', 20),
             )
             label.pack()
 

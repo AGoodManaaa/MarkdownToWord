@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import tkinter as tk
+from typing import Optional
 import customtkinter as ctk
 
 from ui.theme import COLORS
@@ -13,6 +14,7 @@ class StatusBarFeature:
         self.status_label = None
         self.word_count_label = None
         self.cursor_pos_label = None
+        self.progress = None
 
     def create(self):
         container = ctk.CTkFrame(self.app, fg_color=COLORS['bg_light'], height=36, corner_radius=0)
@@ -32,6 +34,21 @@ class StatusBarFeature:
             text_color=COLORS['text_secondary'],
         )
         self.status_label.pack(side="left", padx=18, pady=8)
+
+        self.progress = ctk.CTkProgressBar(
+            self.frame,
+            width=160,
+            height=10,
+            corner_radius=10,
+            fg_color=COLORS['border'],
+            progress_color=COLORS['primary'],
+        )
+        self.progress.set(0)
+        self.progress.pack(side="left", padx=(8, 0), pady=0)
+        try:
+            self.progress.pack_forget()
+        except Exception:
+            pass
 
         right_box = ctk.CTkFrame(self.frame, fg_color="transparent")
         right_box.pack(side="right", padx=18, pady=0)
@@ -58,6 +75,39 @@ class StatusBarFeature:
         try:
             if self.status_label is not None:
                 self.status_label.configure(text=message)
+        except Exception:
+            pass
+
+    def update_progress(self, value: Optional[float], text: Optional[str] = None):
+        try:
+            if text is not None:
+                self.update_status(text)
+        except Exception:
+            pass
+
+        try:
+            if self.progress is None:
+                return
+
+            if value is None:
+                try:
+                    self.progress.pack_forget()
+                except Exception:
+                    pass
+                return
+
+            v = float(value)
+            if v < 0:
+                v = 0.0
+            if v > 1:
+                v = 1.0
+
+            try:
+                if not self.progress.winfo_ismapped():
+                    self.progress.pack(side="left", padx=(8, 0), pady=0)
+            except Exception:
+                pass
+            self.progress.set(v)
         except Exception:
             pass
 

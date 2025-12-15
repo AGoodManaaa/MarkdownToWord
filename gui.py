@@ -459,26 +459,12 @@ class App(ctk.CTk):
         # 导出Word按钮
         self.export_btn = ModernButton(
             left_group,
-            text="� 导出",
+            text="📤 导出",
             command=self.export_to_word,
             style="primary",
             width=92
         )
         self.export_btn.pack(side="left", padx=(0, 8))
-
-        # 取消导出按钮（导出中启用）
-        self.cancel_export_btn = ModernButton(
-            left_group,
-            text="⛔ 取消",
-            command=self.cancel_export,
-            style="danger",
-            width=86,
-        )
-        self.cancel_export_btn.pack(side="left", padx=(0, 8))
-        try:
-            self.cancel_export_btn.configure(state="disabled")
-        except Exception:
-            pass
 
         self.export_style_btn = ModernButton(
             left_group,
@@ -515,16 +501,6 @@ class App(ctk.CTk):
             width=86
         )
         self.copy_btn.pack(side="left", padx=(0, 6))
-        
-        # 关闭预览按钮
-        self.hide_preview_btn = ModernButton(
-            right_group,
-            text="✕ 关闭",
-            command=self.toggle_preview,
-            style="ghost",
-            width=80
-        )
-        self.hide_preview_btn.pack(side="right")
         
         # 清空按钮
         self.clear_btn = ModernButton(
@@ -744,7 +720,11 @@ def hello():
         if self.preview_visible:
             # 显示预览
             self.preview_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
-            self.hide_preview_btn.configure(text="✕ 关闭预览")
+            try:
+                if hasattr(self, 'hide_preview_btn') and self.hide_preview_btn is not None:
+                    self.hide_preview_btn.configure(text="✕ 关闭预览")
+            except Exception:
+                pass
             # 调整列权重
             self.main_frame.grid_columnconfigure(0, weight=3)
             self.main_frame.grid_columnconfigure(1, weight=2)
