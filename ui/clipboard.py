@@ -18,9 +18,16 @@ def copy_to_clipboard_for_app(app) -> None:
         messagebox.showwarning("提示", "请先输入Markdown内容")
         return
 
-    app.update_status("⏳ 正在生成剪贴板内容...")
+    try:
+        if hasattr(app, 'busy') and app.busy is not None:
+            app.busy.enter('clipboard', message='⏳ 正在生成剪贴板内容...')
+        else:
+            app.update_status("⏳ 正在生成剪贴板内容...")
+    except Exception:
+        app.update_status("⏳ 正在生成剪贴板内容...")
 
     def copy_task() -> None:
+        temp_file = None
         try:
             # 生成临时 Word 文档
             temp_file = tempfile.mktemp(suffix=".docx")
@@ -35,18 +42,41 @@ def copy_to_clipboard_for_app(app) -> None:
             copy_word_to_clipboard_for_app(app, temp_file)
 
             # 清理临时文件
-            os.remove(temp_file)
+            try:
+                if temp_file and os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except Exception:
+                pass
 
-            app.after(
-                0,
-                lambda: app.update_status(
-                    "✅ 已复制到剪贴板，可直接粘贴到Word"
-                ),
-            )
+            def _ok() -> None:
+                try:
+                    if hasattr(app, 'busy') and app.busy is not None:
+                        app.busy.exit("✅ 已复制到剪贴板，可直接粘贴到Word")
+                    else:
+                        app.update_status("✅ 已复制到剪贴板，可直接粘贴到Word")
+                except Exception:
+                    pass
+
+            app.after(0, _ok)
             app.after(0, lambda: show_copy_toast_for_app(app))
 
         except Exception as e:  # noqa: BLE001 - 保持原始广泛捕获
-            app.after(0, lambda: app.update_status(f"❌ 复制失败: {e}"))
+            try:
+                if temp_file and os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except Exception:
+                pass
+
+            def _err() -> None:
+                try:
+                    if hasattr(app, 'busy') and app.busy is not None:
+                        app.busy.exit(f"❌ 复制失败: {e}")
+                    else:
+                        app.update_status(f"❌ 复制失败: {e}")
+                except Exception:
+                    pass
+
+            app.after(0, _err)
             app.after(
                 0,
                 lambda: messagebox.showerror("错误", f"复制失败:\n{e}"),
@@ -65,9 +95,16 @@ def copy_markdown_to_clipboard_for_app(app, markdown_text: str) -> None:
         messagebox.showwarning("提示", "请先选择需要复制的内容")
         return
 
-    app.update_status("⏳ 正在生成剪贴板内容...")
+    try:
+        if hasattr(app, 'busy') and app.busy is not None:
+            app.busy.enter('clipboard', message='⏳ 正在生成剪贴板内容...')
+        else:
+            app.update_status("⏳ 正在生成剪贴板内容...")
+    except Exception:
+        app.update_status("⏳ 正在生成剪贴板内容...")
 
     def copy_task() -> None:
+        temp_file = None
         try:
             temp_file = tempfile.mktemp(suffix=".docx")
             base_dir = (
@@ -79,17 +116,40 @@ def copy_markdown_to_clipboard_for_app(app, markdown_text: str) -> None:
 
             copy_word_to_clipboard_for_app(app, temp_file)
 
-            os.remove(temp_file)
+            try:
+                if temp_file and os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except Exception:
+                pass
 
-            app.after(
-                0,
-                lambda: app.update_status(
-                    "✅ 已复制到剪贴板，可直接粘贴到Word"
-                ),
-            )
+            def _ok() -> None:
+                try:
+                    if hasattr(app, 'busy') and app.busy is not None:
+                        app.busy.exit("✅ 已复制到剪贴板，可直接粘贴到Word")
+                    else:
+                        app.update_status("✅ 已复制到剪贴板，可直接粘贴到Word")
+                except Exception:
+                    pass
+
+            app.after(0, _ok)
             app.after(0, lambda: show_copy_toast_for_app(app))
         except Exception as e:  # noqa: BLE001 - 保持原始广泛捕获
-            app.after(0, lambda: app.update_status(f"❌ 复制失败: {e}"))
+            try:
+                if temp_file and os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except Exception:
+                pass
+
+            def _err() -> None:
+                try:
+                    if hasattr(app, 'busy') and app.busy is not None:
+                        app.busy.exit(f"❌ 复制失败: {e}")
+                    else:
+                        app.update_status(f"❌ 复制失败: {e}")
+                except Exception:
+                    pass
+
+            app.after(0, _err)
             app.after(
                 0,
                 lambda: messagebox.showerror("错误", f"复制失败:\n{e}"),
@@ -148,9 +208,13 @@ def copy_as_html_for_app(app, docx_path: str) -> None:  # noqa: ARG001 - 保留�
 def show_copy_toast_for_app(app) -> None:
     """显示复制成功的提示气泡。"""
     import customtkinter as ctk
-    from ui.theme import COLORS
+    from ui.theme import COLORS, apply_window_icon
 
     toast = ctk.CTkToplevel(app)
+    try:
+        apply_window_icon(toast)
+    except Exception:
+        pass
     toast.overrideredirect(True)
     toast.attributes("-topmost", True)
 

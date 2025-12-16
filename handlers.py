@@ -93,6 +93,12 @@ class ImageHandler:
             def add_caption(text: str):
                 self.image_counter += 1
                 cap_para = doc.add_paragraph()
+                try:
+                    if bool(self.style_config.get('use_word_styles', False)):
+                        st = str(self.style_config.get('map_image_caption', 'Caption') or 'Caption').strip() or 'Caption'
+                        cap_para.style = st
+                except Exception:
+                    pass
                 if caption_align == 'left':
                     cap_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
                 elif caption_align == 'right':
@@ -284,6 +290,12 @@ class TableHandler:
         def add_caption(text: str):
             self.table_counter += 1
             cap_para = doc.add_paragraph()
+            try:
+                if bool(self.style_config.get('use_word_styles', False)):
+                    st = str(self.style_config.get('map_table_caption', 'Caption') or 'Caption').strip() or 'Caption'
+                    cap_para.style = st
+            except Exception:
+                pass
             if caption_align == 'left':
                 cap_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
             elif caption_align == 'right':

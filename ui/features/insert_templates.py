@@ -2,7 +2,7 @@
 
 import customtkinter as ctk
 
-from ui.theme import COLORS
+from ui.theme import COLORS, apply_window_icon, attach_window_geometry
 
 
 class InsertTemplatesFeature:
@@ -14,6 +14,14 @@ class InsertTemplatesFeature:
     def show_menu(self, event=None):
         dialog = ctk.CTkToplevel(self.app)
         dialog.title("插入内容")
+        try:
+            apply_window_icon(dialog)
+        except Exception:
+            pass
+        try:
+            attach_window_geometry(self.app, dialog, 'insert_templates')
+        except Exception:
+            pass
         dialog.geometry("500x480")
         dialog.transient(self.app)
         dialog.grab_set()

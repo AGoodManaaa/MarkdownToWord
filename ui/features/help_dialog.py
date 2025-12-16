@@ -2,7 +2,7 @@
 
 import customtkinter as ctk
 
-from ui.theme import COLORS
+from ui.theme import COLORS, apply_window_icon, attach_window_geometry
 
 
 class HelpDialogFeature:
@@ -13,6 +13,14 @@ class HelpDialogFeature:
         """显示快捷键帮助"""
         help_dialog = ctk.CTkToplevel(self.app)
         help_dialog.title("⌨️ 快捷键说明")
+        try:
+            apply_window_icon(help_dialog)
+        except Exception:
+            pass
+        try:
+            attach_window_geometry(self.app, help_dialog, 'help_dialog')
+        except Exception:
+            pass
         help_dialog.geometry("400x450")
         help_dialog.transient(self.app)
         help_dialog.resizable(False, False)
