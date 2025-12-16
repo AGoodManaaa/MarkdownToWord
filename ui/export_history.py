@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import customtkinter as ctk
 
-from ui.theme import COLORS, save_config
+from ui.theme import COLORS, save_config, apply_window_icon, attach_window_geometry
 
 
 def _now_str() -> str:
@@ -53,6 +53,14 @@ def show_export_history_dialog(app) -> None:
 
     dialog = ctk.CTkToplevel(app)
     dialog.title('导出历史')
+    try:
+        apply_window_icon(dialog)
+    except Exception:
+        pass
+    try:
+        attach_window_geometry(app, dialog, 'export_history')
+    except Exception:
+        pass
     dialog.geometry('720x520')
     dialog.transient(app)
     dialog.grab_set()

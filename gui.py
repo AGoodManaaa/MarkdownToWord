@@ -43,6 +43,10 @@ from ui.clipboard import (
     show_copy_toast_for_app,
 )
 from ui.export_history import show_export_history_dialog
+from ui.busy_state import BusyState
+from ui.drag_drop import handle_drop_for_app
+from ui.startup_content import insert_example_if_empty_for_app
+from ui.formatting import show_format_dialog_for_app
 
 
 class App(ctk.CTk):
@@ -80,6 +84,8 @@ class App(ctk.CTk):
         
         # 当前文件路径
         self.current_file = None
+
+        self.busy = BusyState(self)
 
         # 导出取消标记（线程间通信）
         self._export_cancel_event = None
@@ -120,6 +126,7 @@ class App(ctk.CTk):
         self.bind('<Control-o>', lambda e: self.open_file())
         self.bind('<Control-s>', lambda e: self.save_file())  # 保存源文件
         self.bind('<Control-Shift-s>', lambda e: self.export_to_word())  # 导出Word
+        self.bind('<Control-Shift-f>', lambda e: self.format_markdown())
         self.bind('<Control-Shift-c>', lambda e: self.copy_to_clipboard())
         self.bind('<Control-j>', lambda e: self.show_export_history())
         self.bind('<Control-f>', lambda e: self.show_search_dialog())
@@ -176,6 +183,7 @@ class App(ctk.CTk):
         tools = [
             ("📂", "打开", self.open_file, "Ctrl+O"),
             ("💾", "保存", self.save_file, "Ctrl+S"),
+            ("🧹", "规范化", self.format_markdown, "Ctrl+Shift+F"),
             ("🔍", "搜索", self.show_search_dialog, "Ctrl+F"),
             ("👁", "预览", self.toggle_preview, "Ctrl+P"),
             ("📤", "导出", self.export_to_word, "Ctrl+Shift+S"),
@@ -467,6 +475,24 @@ class App(ctk.CTk):
         )
         self.export_btn.pack(side="left", padx=(0, 8))
 
+        # 取消导出按钮（导出进行中可用）
+        self.cancel_export_btn = ModernButton(
+            left_group,
+            text="⛔ 取消",
+            command=self.cancel_export,
+            style="ghost",
+            width=86,
+        )
+        self.cancel_export_btn.pack(side="left", padx=(0, 8))
+        try:
+            self.cancel_export_btn.configure(state="disabled")
+        except Exception:
+            pass
+        try:
+            self.tooltip.add_tooltip(self.cancel_export_btn, "取消导出\n导出进行中可用")
+        except Exception:
+            pass
+
         self.export_style_btn = ModernButton(
             left_group,
             text="⚙",
@@ -523,71 +549,7 @@ class App(ctk.CTk):
     
     def _insert_example(self):
         """插入示例Markdown"""
-        example = """# 欢迎使用 Markdown 转换器 
-
-## 核心功能
-
-这是一个**功能完善**的 Markdown 转 Word 工具：
-
-### 文档转换
-- ✅ 标题、段落、列表（有序/无序）
-- ✅ **粗体**、*斜体*、~~删除线~~
-- ✅ 上标<sup>2</sup>和下标<sub>2</sub>
-- ✅ 表格（自动三线表样式）
-- ✅ 数学公式（LaTeX 语法）
-- ✅ 代码块高亮
-- ✅ 图片自动缩放
-- ✅ 可点击超链接
-
-### 任务列表
-- [ ] 待完成任务
-- [x] 已完成任务
-
-### 编辑功能
-- ✅ 保存源文件（Ctrl+S）
-- ✅ 导出Word（Ctrl+Shift+S）
-- ✅ 撤销/重做（Ctrl+Z / Ctrl+Y）
-- ✅ 查找/替换（Ctrl+F / Ctrl+H）
-- ✅ 未保存提示
-
-### 界面特性
-- ✅ 实时预览
-- ✅ 亮/暗主题切换
-- ✅ 窗口位置记忆
-- ✅ 最近文件列表
-
-## 数学公式示例
-
-行内公式：质能方程 $E = mc^2$
-
-块级公式：
-
-$$
-\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}
-$$
-
-## 代码示例
-
-```python
-def hello():
-    print("Hello, World!")
-```
-
-## 快捷键
-
-| 功能 | 快捷键 |
-|------|--------|
-| 保存源文件 | Ctrl+S |
-| 导出Word | Ctrl+Shift+S |
-| 打开文件 | Ctrl+O |
-| 撤销 | Ctrl+Z |
-| 重做 | Ctrl+Y |
-| 查找 | Ctrl+F |
-| 替换 | Ctrl+H |
-| 帮助 | F1 |
-"""
-        self.input_text.insert("1.0", example)
-        self.on_text_change(None)
+        insert_example_if_empty_for_app(self)
     
     def insert_text(self, text: str):
         """在光标位置插入文本"""
@@ -609,6 +571,12 @@ def hello():
     def export_to_word(self):
         """导出为Word文档（委托给导出 helper）。"""
         export_to_word_for_app(self)
+
+    def format_markdown(self):
+        try:
+            show_format_dialog_for_app(self)
+        except Exception:
+            pass
 
     def show_export_history(self):
         """显示导出历史。"""
@@ -812,15 +780,7 @@ def hello():
     
     def _on_drop(self, event):
         """处理拖拽放置事件"""
-        file_path = event.data
-        # 清理路径（去除大括号等）
-        if file_path.startswith('{') and file_path.endswith('}'):
-            file_path = file_path[1:-1]
-        
-        if file_path.lower().endswith(('.md', '.markdown', '.txt')):
-            self.file_ops.load_file(file_path)
-        else:
-            messagebox.showwarning("提示", "请拖拽Markdown文件(.md, .markdown, .txt)")
+        handle_drop_for_app(self, event)
     
     def _open_recent_file(self, file_path: str):
         """打开最近文件"""

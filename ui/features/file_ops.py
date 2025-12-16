@@ -14,8 +14,17 @@ class FileOpsFeature:
         if not self.check_unsaved_changes():
             return
 
+        initial_dir = None
+        try:
+            initial_dir = (self.app.config or {}).get('last_open_dir')
+            if initial_dir and not os.path.isdir(str(initial_dir)):
+                initial_dir = None
+        except Exception:
+            initial_dir = None
+
         file_path = filedialog.askopenfilename(
             title="选择Markdown文件",
+            initialdir=initial_dir,
             filetypes=[
                 ("Markdown文件", "*.md *.markdown"),
                 ("文本文件", "*.txt"),
@@ -24,6 +33,16 @@ class FileOpsFeature:
         )
 
         if file_path:
+            try:
+                if isinstance(self.app.config, dict):
+                    self.app.config['last_open_dir'] = os.path.dirname(file_path)
+                    try:
+                        from ui.theme import save_config
+                        save_config(self.app.config)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             self.load_file(file_path)
 
     def load_file(self, file_path: str):
@@ -57,10 +76,18 @@ class FileOpsFeature:
 
     def save_file_as(self):
         """另存为Markdown文件"""
+        initial_dir = None
+        try:
+            initial_dir = (self.app.config or {}).get('last_save_dir')
+            if initial_dir and not os.path.isdir(str(initial_dir)):
+                initial_dir = None
+        except Exception:
+            initial_dir = None
         file_path = filedialog.asksaveasfilename(
             title="保存Markdown文件",
             defaultextension=".md",
             initialfile="untitled.md",
+            initialdir=initial_dir,
             filetypes=[
                 ("Markdown文件", "*.md"),
                 ("文本文件", "*.txt"),
@@ -68,6 +95,16 @@ class FileOpsFeature:
             ],
         )
         if file_path:
+            try:
+                if isinstance(self.app.config, dict):
+                    self.app.config['last_save_dir'] = os.path.dirname(file_path)
+                    try:
+                        from ui.theme import save_config
+                        save_config(self.app.config)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             self.save_to_file(file_path)
             self.app.current_file = file_path
             self.add_recent_file(file_path)

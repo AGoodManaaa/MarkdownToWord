@@ -46,6 +46,21 @@ class MarkdownToWordConverter:
         self.doc = None
 
         self.export_style = export_style if isinstance(export_style, dict) else {}
+
+        # 诊断信息（用于导出报告）
+        self.diagnostics = {
+            'unresolved_refs': [],
+            'include_issues': [],
+            'included_files': [],
+        }
+
+        # 交叉引用：id -> bookmark / label
+        self._bookmark_id_counter = 1
+        self._id_to_bookmark = {}
+        self._id_to_label = {}
+        self._fig_counter = 0
+        self._tbl_counter = 0
+        self._sec_counters = [0, 0, 0, 0]
         
         # 初始化各处理器
         self.image_handler = ImageHandler(base_dir, style_config=self.export_style)
@@ -113,12 +128,21 @@ class MarkdownToWordConverter:
             pass
         
         # 预处理文本
+        try:
+            markdown_text = self._expand_includes(markdown_text)
+        except Exception:
+            pass
+
         markdown_text = clean_text(markdown_text)
         markdown_text = convert_latex_delimiters(markdown_text)  # 转换 \(...\) 和 \[...\] 格式
         markdown_text = normalize_markdown(markdown_text)  # 规范化格式
         
         # 分割成块并处理
         blocks = self._split_into_blocks(markdown_text)
+        try:
+            self._prescan_blocks_for_refs(blocks)
+        except Exception:
+            pass
         total = len(blocks)
 
         for idx, blk in enumerate(blocks, start=1):
@@ -153,6 +177,150 @@ class MarkdownToWordConverter:
                 ) from e
         
         return self.doc
+
+    def _prescan_blocks_for_refs(self, blocks: list) -> None:
+        """预扫描 blocks：为 {#id} 分配书签名与显示标签，支持前向引用。"""
+        try:
+            self._fig_counter = 0
+            self._tbl_counter = 0
+            self._sec_counters = [0, 0, 0, 0]
+        except Exception:
+            pass
+
+        for blk in (blocks or []):
+            try:
+                t = blk.get('type')
+                c = blk.get('content')
+                anchor = None
+                level = None
+
+                if t and t.startswith('heading_'):
+                    level = int(t.split('_')[1])
+                    if isinstance(c, dict):
+                        anchor = c.get('anchor')
+                elif t == 'image':
+                    if isinstance(c, dict):
+                        anchor = c.get('anchor')
+                elif t == 'table':
+                    if isinstance(c, dict):
+                        anchor = c.get('anchor')
+
+                if anchor:
+                    self._ensure_bookmark(anchor)
+                    if str(anchor).startswith('sec:') and level is not None:
+                        self._make_label_for_anchor(anchor, 'heading', heading_level=level)
+                    elif str(anchor).startswith('fig:'):
+                        self._make_label_for_anchor(anchor, 'image')
+                    elif str(anchor).startswith('tbl:'):
+                        self._make_label_for_anchor(anchor, 'table')
+            except Exception:
+                pass
+
+    def _expand_includes(self, text: str) -> str:
+        """展开 @include 指令（支持引号、相对路径、递归与循环保护）。"""
+        base_dir = self.base_dir
+        if not base_dir:
+            try:
+                base_dir = os.getcwd()
+            except Exception:
+                base_dir = None
+        return self._expand_includes_inner(text, current_dir=base_dir, stack=[])
+
+    def _expand_includes_inner(self, text: str, current_dir: str, stack: list) -> str:
+        out_lines = []
+        lines = (text or '').split('\n')
+        pat = re.compile(r'^\s*@include\s+("[^"]+"|\S+)\s*$')
+        for ln in lines:
+            m = pat.match(ln or '')
+            if not m:
+                out_lines.append(ln)
+                continue
+
+            raw = m.group(1)
+            p = raw.strip()
+            if p.startswith('"') and p.endswith('"') and len(p) >= 2:
+                p = p[1:-1]
+            p = p.strip()
+            if not p:
+                out_lines.append(ln)
+                continue
+
+            inc_path = p
+            try:
+                if current_dir and not os.path.isabs(inc_path):
+                    inc_path = os.path.normpath(os.path.join(current_dir, inc_path))
+                inc_path = os.path.abspath(inc_path)
+            except Exception:
+                pass
+
+            # 循环保护
+            if inc_path in stack:
+                out_lines.append(f"[include循环: {p}]")
+                try:
+                    self.diagnostics['include_issues'].append({'type': 'cycle', 'path': inc_path})
+                except Exception:
+                    pass
+                continue
+
+            if not os.path.exists(inc_path):
+                out_lines.append(f"[include缺失: {p}]")
+                try:
+                    self.diagnostics['include_issues'].append({'type': 'missing', 'path': inc_path})
+                except Exception:
+                    pass
+                continue
+
+            try:
+                with open(inc_path, 'r', encoding='utf-8') as f:
+                    inc_text = f.read()
+            except Exception:
+                out_lines.append(f"[include读取失败: {p}]")
+                try:
+                    self.diagnostics['include_issues'].append({'type': 'read_error', 'path': inc_path})
+                except Exception:
+                    pass
+                continue
+
+            try:
+                self.diagnostics['included_files'].append(inc_path)
+            except Exception:
+                pass
+
+            next_dir = None
+            try:
+                next_dir = os.path.dirname(inc_path)
+            except Exception:
+                next_dir = current_dir
+
+            expanded = self._expand_includes_inner(inc_text, current_dir=next_dir, stack=stack + [inc_path])
+            out_lines.append(expanded)
+
+        return '\n'.join(out_lines)
+
+    def _use_word_styles(self) -> bool:
+        try:
+            return bool(self.export_style.get('use_word_styles', False))
+        except Exception:
+            return False
+
+    def _mapped_style_name(self, key: str, fallback: str = None) -> str:
+        try:
+            v = self.export_style.get(key)
+            if v is None:
+                return fallback
+            s = str(v).strip()
+            return s if s else fallback
+        except Exception:
+            return fallback
+
+    def _apply_paragraph_style(self, para, style_name: str) -> None:
+        if not style_name:
+            return
+        try:
+            # style_name 不存在时会抛 KeyError
+            para.style = style_name
+        except Exception:
+            pass
 
     def _set_update_fields_on_open(self, enabled: bool) -> None:
         """设置 Word 打开文档时是否自动更新域（fields）。"""
@@ -196,10 +364,21 @@ class MarkdownToWordConverter:
                 continue
             
             # 表格
+            # 支持表格前一行 {#tbl:...} 作为表格锚点
+            if re.match(r'^\s*\{#([A-Za-z0-9_\-\:\.]+)\}\s*$', line.strip()) and i + 1 < len(lines) and '|' in lines[i + 1] and i + 2 < len(lines) and re.match(r'^[\s\|\:\-]+$', lines[i + 2]):
+                start_line = i + 1
+                m = re.match(r'^\s*\{#([A-Za-z0-9_\-\:\.]+)\}\s*$', line.strip())
+                table_anchor = m.group(1) if m else None
+                i += 1
+                line = lines[i]
+                block, i = self._extract_table(lines, i)
+                blocks.append({'type': 'table', 'content': {'text': block, 'anchor': table_anchor}, 'start_line': start_line})
+                continue
+
             if '|' in line and i + 1 < len(lines) and re.match(r'^[\s\|\:\-]+$', lines[i + 1]):
                 start_line = i + 1
                 block, i = self._extract_table(lines, i)
-                blocks.append({'type': 'table', 'content': block, 'start_line': start_line})
+                blocks.append({'type': 'table', 'content': {'text': block, 'anchor': None}, 'start_line': start_line})
                 continue
             
             # 块级公式 $$
@@ -221,7 +400,8 @@ class MarkdownToWordConverter:
                 start_line = i + 1
                 level = len(re.match(r'^#+', line).group())
                 content = line[level:].strip()
-                blocks.append({'type': f'heading_{min(level, 6)}', 'content': content, 'start_line': start_line})
+                content, anchor = self._extract_anchor_suffix(content)
+                blocks.append({'type': f'heading_{min(level, 6)}', 'content': {'text': content, 'anchor': anchor}, 'start_line': start_line})
                 i += 1
                 continue
             
@@ -253,9 +433,9 @@ class MarkdownToWordConverter:
                 continue
             
             # 图片（单独一行）
-            img_match = re.match(r'^!\[([^\]]*)\]\(([^\)]+)\)$', line.strip())
+            img_match = re.match(r'^!\[([^\]]*)\]\(([^\)]+)\)\s*(\{#([A-Za-z0-9_\-\:\.]+)\})?\s*$', line.strip())
             if img_match:
-                blocks.append({'type': 'image', 'content': (img_match.group(1), img_match.group(2)), 'start_line': i + 1})
+                blocks.append({'type': 'image', 'content': {'text': (img_match.group(1), img_match.group(2)), 'anchor': (img_match.group(4) if img_match.group(4) else None)}, 'start_line': i + 1})
                 i += 1
                 continue
 
@@ -271,6 +451,152 @@ class MarkdownToWordConverter:
             blocks.append({'type': 'paragraph', 'content': para, 'start_line': start_line})
         
         return blocks
+
+    def _extract_anchor_suffix(self, text: str) -> tuple[str, str]:
+        """提取行尾的 {#id}。"""
+        if not text:
+            return text, None
+        m = re.match(r'^(.*?)(?:\s*\{#([A-Za-z0-9_\-\:\.]+)\}\s*)$', text)
+        if not m:
+            return text, None
+        body = (m.group(1) or '').rstrip()
+        anchor = (m.group(2) or '').strip() or None
+        return body, anchor
+
+    def _sanitize_bookmark_name(self, anchor_id: str) -> str:
+        s = str(anchor_id or '').strip()
+        s = re.sub(r'[^A-Za-z0-9_]', '_', s)
+        if not s:
+            s = f'bkm_{self._bookmark_id_counter}'
+        if not re.match(r'^[A-Za-z]', s):
+            s = 'b_' + s
+        return s[:40]
+
+    def _ensure_bookmark(self, anchor_id: str) -> str:
+        if not anchor_id:
+            return None
+        if anchor_id in self._id_to_bookmark:
+            return self._id_to_bookmark[anchor_id]
+        name = self._sanitize_bookmark_name(anchor_id)
+        self._id_to_bookmark[anchor_id] = name
+        return name
+
+    def _add_bookmark_to_paragraph(self, paragraph, anchor_id: str) -> None:
+        name = self._ensure_bookmark(anchor_id)
+        if not name:
+            return
+        try:
+            bid = str(self._bookmark_id_counter)
+            self._bookmark_id_counter += 1
+
+            start = OxmlElement('w:bookmarkStart')
+            start.set(qn('w:id'), bid)
+            start.set(qn('w:name'), name)
+            end = OxmlElement('w:bookmarkEnd')
+            end.set(qn('w:id'), bid)
+
+            p = paragraph._p
+            p.insert(0, start)
+            p.append(end)
+        except Exception:
+            pass
+
+    def _make_label_for_anchor(self, anchor_id: str, element_kind: str, heading_level: int = None) -> str:
+        if not anchor_id:
+            return None
+        if anchor_id in self._id_to_label:
+            return self._id_to_label[anchor_id]
+
+        label = None
+        try:
+            if str(anchor_id).startswith('fig:'):
+                self._fig_counter += 1
+                label = f"图 {self._fig_counter}"
+            elif str(anchor_id).startswith('tbl:'):
+                self._tbl_counter += 1
+                label = f"表 {self._tbl_counter}"
+            elif str(anchor_id).startswith('sec:') and heading_level is not None:
+                lv = max(1, min(4, int(heading_level)))
+                self._sec_counters[lv - 1] += 1
+                for j in range(lv, 4):
+                    self._sec_counters[j] = 0
+                parts = [str(self._sec_counters[k]) for k in range(lv) if self._sec_counters[k] > 0]
+                num = '.'.join(parts) if parts else str(self._sec_counters[0])
+                label = f"节 {num}"
+        except Exception:
+            label = None
+
+        if not label:
+            # 兜底：未知前缀
+            label = str(anchor_id)
+
+        self._id_to_label[anchor_id] = label
+        return label
+
+    def _add_internal_ref(self, paragraph, ref_id: str) -> None:
+        rid = (ref_id or '').strip()
+        if not rid:
+            return
+
+        bm = self._id_to_bookmark.get(rid)
+        label = self._id_to_label.get(rid)
+        if not label:
+            # 未知引用：根据前缀给一个更友好的占位
+            try:
+                if rid.startswith('fig:'):
+                    label = f"图 ?"
+                elif rid.startswith('tbl:'):
+                    label = f"表 ?"
+                elif rid.startswith('sec:'):
+                    label = f"节 ?"
+                else:
+                    label = rid
+            except Exception:
+                label = rid
+
+        if not bm:
+            # 未解析：红字占位 + 记录诊断
+            try:
+                run = paragraph.add_run(f"[未解析引用: {rid}]")
+                run.font.color.rgb = RGBColor(255, 0, 0)
+            except Exception:
+                pass
+            try:
+                self.diagnostics['unresolved_refs'].append(rid)
+            except Exception:
+                pass
+            return
+
+        # 生成可点击的内部链接
+        try:
+            hyperlink = OxmlElement('w:hyperlink')
+            hyperlink.set(qn('w:anchor'), bm)
+            hyperlink.set(qn('w:history'), '1')
+
+            new_run = OxmlElement('w:r')
+            rPr = OxmlElement('w:rPr')
+
+            color_val = str(self.export_style.get('hyperlink_color', '0000FF')).lstrip('#').upper()
+            color = OxmlElement('w:color')
+            color.set(qn('w:val'), color_val)
+            rPr.append(color)
+
+            underline = OxmlElement('w:u')
+            underline_val = 'single' if bool(self.export_style.get('hyperlink_underline', True)) else 'none'
+            underline.set(qn('w:val'), underline_val)
+            rPr.append(underline)
+
+            new_run.append(rPr)
+            text_elem = OxmlElement('w:t')
+            text_elem.text = str(label)
+            new_run.append(text_elem)
+            hyperlink.append(new_run)
+            paragraph._p.append(hyperlink)
+        except Exception:
+            try:
+                paragraph.add_run(str(label))
+            except Exception:
+                pass
     
     def _extract_code_block(self, lines: list, start: int) -> tuple:
         """提取代码块"""
@@ -412,7 +738,9 @@ class MarkdownToWordConverter:
         
         if block_type.startswith('heading_'):
             level = int(block_type.split('_')[1])
-            self._add_heading(content, level)
+            anchor = content.get('anchor') if isinstance(content, dict) else None
+            text = content.get('text') if isinstance(content, dict) else content
+            self._add_heading(text, level, anchor_id=anchor)
         
         elif block_type == 'paragraph':
             self._add_paragraph(content)
@@ -425,16 +753,26 @@ class MarkdownToWordConverter:
             )
         
         elif block_type == 'table':
-            headers, rows, alignments = self.table_handler.parse_markdown_table(content)
+            table_anchor = content.get('anchor') if isinstance(content, dict) else None
+            table_text = content.get('text') if isinstance(content, dict) else content
+
+            headers, rows, alignments = self.table_handler.parse_markdown_table(table_text)
             if headers:
                 # 使用自定义方法处理表格，支持单元格内公式
-                self._add_table_with_formulas(headers, rows, alignments)
+                self._add_table_with_formulas(headers, rows, alignments, anchor_id=table_anchor)
         
         elif block_type == 'math_block':
             self.math_handler.add_block_equation(self.doc, content)
         
         elif block_type == 'quote':
-            para = self.doc.add_paragraph(style='Block Quote')
+            para = self.doc.add_paragraph()
+            if self._use_word_styles():
+                self._apply_paragraph_style(para, self._mapped_style_name('map_quote', 'Block Quote'))
+            else:
+                try:
+                    para.style = 'Block Quote'
+                except Exception:
+                    pass
             # 使用行内元素解析
             self._add_inline_content(para, content)
             for run in para.runs:
@@ -452,8 +790,20 @@ class MarkdownToWordConverter:
                 self._add_list_item(item, level, ordered=True, restart=(idx == 0))
         
         elif block_type == 'image':
-            alt_text, image_path = content
-            self.image_handler.add_image(self.doc, image_path, alt_text)
+            anchor = content.get('anchor') if isinstance(content, dict) else None
+            alt_text, image_path = (content.get('text') if isinstance(content, dict) else content)
+            ok = self.image_handler.add_image(self.doc, image_path, alt_text)
+
+            # 给图片添加书签（用于引用）
+            if anchor:
+                try:
+                    # 图片插入时会创建一个居中段落，取最后一个段落作为锚点
+                    p = self.doc.paragraphs[-1] if self.doc.paragraphs else None
+                    if p is not None:
+                        self._add_bookmark_to_paragraph(p, anchor)
+                        self._make_label_for_anchor(anchor, 'image')
+                except Exception:
+                    pass
 
         elif block_type == 'toc':
             if bool(self.export_style.get('toc_enabled', False)):
@@ -511,7 +861,7 @@ class MarkdownToWordConverter:
             # 失败时不抛异常，避免影响导出
             pass
     
-    def _add_heading(self, text: str, level: int) -> None:
+    def _add_heading(self, text: str, level: int, anchor_id: str = None) -> None:
         """添加标题 - 支持公式等行内元素解析"""
         # 标题配置：(字号, 居中)
         heading_config = {
@@ -526,26 +876,43 @@ class MarkdownToWordConverter:
         
         # 创建段落
         para = self.doc.add_paragraph()
+
+        if self._use_word_styles():
+            style_name = self._mapped_style_name(f'map_heading_{level}', f'Heading {level}')
+            self._apply_paragraph_style(para, style_name)
         
-        # 设置对齐方式
-        if is_center:
-            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        else:
-            para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        
-        # 设置段前段后间距
-        para.paragraph_format.space_before = Pt(18 if level == 1 else 12)
-        para.paragraph_format.space_after = Pt(12 if level == 1 else 8)
+        if not self._use_word_styles():
+            # 设置对齐方式
+            if is_center:
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            else:
+                para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            
+            # 设置段前段后间距
+            para.paragraph_format.space_before = Pt(18 if level == 1 else 12)
+            para.paragraph_format.space_after = Pt(12 if level == 1 else 8)
         
         # 使用行内元素解析（支持公式等）
         self._add_inline_content(para, text)
+
+        # 书签（用于引用）+ 节编号标签
+        if anchor_id:
+            try:
+                self._add_bookmark_to_paragraph(para, anchor_id)
+                if str(anchor_id).startswith('sec:'):
+                    self._make_label_for_anchor(anchor_id, 'heading', heading_level=level)
+            except Exception:
+                pass
         
-        # 为所有run设置标题字体样式
-        for run in para.runs:
-            self._set_heading_font(run, font_size)
+        if not self._use_word_styles():
+            # 为所有run设置标题字体样式
+            for run in para.runs:
+                self._set_heading_font(run, font_size)
     
     def _set_heading_font(self, run, font_size) -> None:
         """设置标题字体 - 中文黑体，英文Times New Roman，加粗"""
+        if self._use_word_styles():
+            return
         run.font.size = font_size
         run.font.bold = True
         run.font.name = FONTS['body_en']  # 英文字体
@@ -565,9 +932,11 @@ class MarkdownToWordConverter:
             return
         
         para = self.doc.add_paragraph()
-        
-        # 设置首行缩进：2个字符（小四12pt × 2 = 24pt）
-        para.paragraph_format.first_line_indent = Pt(24)
+        if self._use_word_styles():
+            self._apply_paragraph_style(para, self._mapped_style_name('map_paragraph', 'Normal'))
+        else:
+            # 设置首行缩进：2个字符（小四12pt × 2 = 24pt）
+            para.paragraph_format.first_line_indent = Pt(24)
         
         self._add_inline_content(para, text)
         
@@ -724,13 +1093,23 @@ class MarkdownToWordConverter:
         
         return num_id
     
-    def _add_table_with_formulas(self, headers: list, rows: list, alignments: list = None) -> None:
-        """添加表格 - 支持单元格内公式渲染，支持对齐方式"""
+    def _add_table_with_formulas(self, headers: list, rows: list, alignments: list = None, anchor_id: str = None) -> None:
+        """添加表格 - 支持单元格内公式渲染，支持对齐方式，支持 {#tbl:...} 书签"""
         from styles import apply_table_style
         
         num_cols = len(headers)
         num_rows = len(rows) + 1
         
+        # 表格锚点：在表格前插入一个空段落作为书签位置
+        if anchor_id:
+            try:
+                p = self.doc.add_paragraph()
+                self._add_bookmark_to_paragraph(p, anchor_id)
+                if str(anchor_id).startswith('tbl:'):
+                    self._make_label_for_anchor(anchor_id, 'table')
+            except Exception:
+                pass
+
         # 创建表格
         table = self.doc.add_table(rows=num_rows, cols=num_cols)
 
@@ -814,13 +1193,30 @@ class MarkdownToWordConverter:
         """
         elements = parse_inline(text)
         
+        ref_pat = re.compile(r'\[\[ref:([^\]]+)\]\]')
+
         for elem in elements:
             if elem.type == InlineType.TEXT:
-                run = paragraph.add_run(elem.content)
-                if base_bold:
-                    run.bold = True
-                if base_italic:
-                    run.italic = True
+                s = elem.content or ''
+                last = 0
+                for m in ref_pat.finditer(s):
+                    if m.start() > last:
+                        run = paragraph.add_run(s[last:m.start()])
+                        if base_bold:
+                            run.bold = True
+                        if base_italic:
+                            run.italic = True
+
+                    ref_id = (m.group(1) or '').strip()
+                    self._add_internal_ref(paragraph, ref_id)
+                    last = m.end()
+
+                if last < len(s):
+                    run = paragraph.add_run(s[last:])
+                    if base_bold:
+                        run.bold = True
+                    if base_italic:
+                        run.italic = True
             
             elif elem.type == InlineType.BOLD:
                 # 递归解析加粗内容（支持内部公式）
@@ -892,6 +1288,18 @@ class MarkdownToWordConverter:
             run: 文本run对象
             keep_style: 是否保留原有的bold/italic样式
         """
+        if self._use_word_styles():
+            # 方案B：由 Word 样式决定字体/段落格式，这里只保留加粗/斜体等行内样式
+            try:
+                if keep_style:
+                    if run.bold:
+                        run.font.bold = True
+                    if run.italic:
+                        run.font.italic = True
+                return
+            except Exception:
+                return
+
         # 先保存原有样式
         original_bold = run.bold
         original_italic = run.italic

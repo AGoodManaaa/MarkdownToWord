@@ -440,6 +440,17 @@ class ExportStyleSettingsDialog(ctk.CTkToplevel):
         add_row('table_caption_align', '表格标题对齐 table_caption_align', 'option', align_opts)
         add_row('table_caption_template', '表格标题模板 table_caption_template', 'str')
 
+        ctk.CTkLabel(scroll, text="样式映射（方案B）", font=ctk.CTkFont(size=14, weight='bold'), text_color=COLORS['text_primary']).pack(anchor='w', pady=(14, 2))
+        add_row('use_word_styles', '启用 Word 样式映射 use_word_styles', 'bool')
+        add_row('map_heading_1', 'H1 -> Word样式 map_heading_1', 'str')
+        add_row('map_heading_2', 'H2 -> Word样式 map_heading_2', 'str')
+        add_row('map_heading_3', 'H3 -> Word样式 map_heading_3', 'str')
+        add_row('map_heading_4', 'H4 -> Word样式 map_heading_4', 'str')
+        add_row('map_paragraph', '正文 -> Word样式 map_paragraph', 'str')
+        add_row('map_quote', '引用 -> Word样式 map_quote', 'str')
+        add_row('map_image_caption', '图片标题 -> Word样式 map_image_caption', 'str')
+        add_row('map_table_caption', '表格标题 -> Word样式 map_table_caption', 'str')
+
         btns = ctk.CTkFrame(container, fg_color='transparent')
         btns.pack(fill='x', padx=10, pady=(0, 10))
 

@@ -3,7 +3,7 @@
 import tkinter as tk
 import customtkinter as ctk
 
-from ui.theme import COLORS
+from ui.theme import COLORS, apply_window_icon, attach_window_geometry
 
 
 class CommandPalette:
@@ -25,6 +25,14 @@ class CommandPalette:
 
         self.win = ctk.CTkToplevel(self.app)
         self.win.title("命令面板")
+        try:
+            apply_window_icon(self.win)
+        except Exception:
+            pass
+        try:
+            attach_window_geometry(self.app, self.win, 'command_palette')
+        except Exception:
+            pass
         self.win.geometry("520x420")
         self.win.transient(self.app)
         self.win.grab_set()

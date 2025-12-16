@@ -8,13 +8,14 @@ import traceback
 from threading import Event
 from tkinter import filedialog, messagebox
 import tkinter as tk
+import time
 
 import customtkinter as ctk
 
 from converter import MarkdownToWordConverter, ExportCancelled
 from ui.preflight import run_preflight
 from ui.export_history import record_export_event
-from ui.theme import COLORS
+from ui.theme import COLORS, apply_window_icon, attach_window_geometry
 
 
 def export_to_word_for_app(app) -> None:
@@ -35,8 +36,21 @@ def show_export_options_for_app(app, content: str) -> None:
     """显示导出选项对话框。"""
     dialog = ctk.CTkToplevel(app)
     dialog.title("导出选项")
-    w, h = 400, 420
+    try:
+        apply_window_icon(dialog)
+    except Exception:
+        pass
+    try:
+        attach_window_geometry(app, dialog, 'export_options')
+    except Exception:
+        pass
+    w, h = 440, 560
     dialog.geometry(f"{w}x{h}")
+    try:
+        dialog.minsize(420, 520)
+        dialog.resizable(True, True)
+    except Exception:
+        pass
     dialog.transient(app)
     dialog.grab_set()
 
@@ -50,7 +64,7 @@ def show_export_options_for_app(app, content: str) -> None:
     ctk.CTkLabel(
         dialog,
         text="📄 导出设置",
-        font=ctk.CTkFont(size=18, weight="bold"),
+        font=ctk.CTkFont(size=20, weight="bold"),
     ).pack(pady=(20, 15))
 
     # 样式选择
@@ -60,7 +74,7 @@ def show_export_options_for_app(app, content: str) -> None:
     ctk.CTkLabel(
         style_frame,
         text="文档样式：",
-        font=ctk.CTkFont(size=14),
+        font=ctk.CTkFont(size=16),
     ).pack(anchor="w")
 
     last_style = None
@@ -89,7 +103,7 @@ def show_export_options_for_app(app, content: str) -> None:
             text=label,
             variable=style_var,
             value=value,
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=14),
         ).pack(anchor="w", pady=5, padx=10)
 
     # 页面设置
@@ -99,7 +113,7 @@ def show_export_options_for_app(app, content: str) -> None:
     ctk.CTkLabel(
         page_frame,
         text="页面设置：",
-        font=ctk.CTkFont(size=14),
+        font=ctk.CTkFont(size=16),
     ).pack(anchor="w")
 
     page_var = ctk.StringVar(value=(last_page or "a4"))
@@ -120,7 +134,7 @@ def show_export_options_for_app(app, content: str) -> None:
     ctk.CTkLabel(
         preflight_frame,
         text="导出前检查：",
-        font=ctk.CTkFont(size=14),
+        font=ctk.CTkFont(size=16),
     ).pack(anchor="w")
 
     remote_var = ctk.BooleanVar(value=bool(last_preflight_remote))
@@ -137,7 +151,7 @@ def show_export_options_for_app(app, content: str) -> None:
     ctk.CTkLabel(
         toc_frame,
         text="目录（TOC）：",
-        font=ctk.CTkFont(size=14),
+        font=ctk.CTkFont(size=16),
     ).pack(anchor="w")
 
     toc_enabled = False
@@ -152,6 +166,13 @@ def show_export_options_for_app(app, content: str) -> None:
     toc_var = ctk.BooleanVar(value=toc_enabled)
     update_fields_var = ctk.BooleanVar(value=update_fields)
 
+    auto_format_enabled = False
+    try:
+        auto_format_enabled = bool((app.config or {}).get('export_auto_format_markdown', False))
+    except Exception:
+        auto_format_enabled = False
+    auto_format_var = ctk.BooleanVar(value=auto_format_enabled)
+
     ctk.CTkSwitch(
         toc_frame,
         text="启用 [[TOC]] 标记生成目录",
@@ -162,6 +183,12 @@ def show_export_options_for_app(app, content: str) -> None:
         toc_frame,
         text="打开文档时自动更新目录/编号",
         variable=update_fields_var,
+    ).pack(anchor="w", pady=(6, 0), padx=10)
+
+    ctk.CTkSwitch(
+        toc_frame,
+        text="导出前自动规范化 Markdown（推荐）",
+        variable=auto_format_var,
     ).pack(anchor="w", pady=(6, 0), padx=10)
 
     # 按钮
@@ -177,6 +204,7 @@ def show_export_options_for_app(app, content: str) -> None:
                 app.config['preflight_check_remote_images'] = bool(remote_var.get())
                 app.config['export_toc_enabled'] = bool(toc_var.get())
                 app.config['export_update_fields_on_open'] = bool(update_fields_var.get())
+                app.config['export_auto_format_markdown'] = bool(auto_format_var.get())
                 try:
                     from ui.theme import save_config
                     save_config(app.config)
@@ -226,6 +254,17 @@ def show_export_options_for_app(app, content: str) -> None:
 
 def do_export_for_app(app, content: str, style: str, page_size: str) -> None:
     """执行导出逻辑。"""
+    # 可选：导出前自动规范化 Markdown
+    try:
+        if bool((getattr(app, 'config', None) or {}).get('export_auto_format_markdown', False)):
+            try:
+                from ui.formatting import format_markdown_text
+                content = format_markdown_text(content)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     base_dir = (
         os.path.dirname(app.current_file) if getattr(app, 'current_file', None) else os.getcwd()
     )
@@ -281,20 +320,67 @@ def do_export_for_app(app, content: str, style: str, page_size: str) -> None:
         if app.current_file
         else "output"
     )
+    initial_dir = None
+    try:
+        last_path = (app.config or {}).get('last_export_output_path')
+        if last_path:
+            last_dir = os.path.dirname(str(last_path))
+            if last_dir and os.path.isdir(last_dir):
+                initial_dir = last_dir
+    except Exception:
+        initial_dir = None
+    if not initial_dir:
+        try:
+            if app.current_file:
+                initial_dir = os.path.dirname(app.current_file)
+        except Exception:
+            initial_dir = None
+
+    initial_file = None
+    try:
+        last_path = (app.config or {}).get('last_export_output_path')
+        if last_path:
+            base = os.path.basename(str(last_path))
+            if base.lower().endswith('.docx'):
+                initial_file = base
+    except Exception:
+        initial_file = None
+    if not initial_file:
+        initial_file = f"{default_name}.docx"
+
     file_path = filedialog.asksaveasfilename(
         title="保存Word文档",
         defaultextension=".docx",
-        initialfile=f"{default_name}.docx",
+        initialfile=initial_file,
+        initialdir=initial_dir,
         filetypes=[("Word文档", "*.docx")],
     )
 
     if not file_path:
         return
 
+    # 进入忙碌态：禁用按钮，避免重复触发
+    try:
+        if hasattr(app, 'busy') and app.busy is not None:
+            app.busy.enter('export', message='⏳ 正在转换...')
+    except Exception:
+        pass
+
     try:
         app._last_export_style = style
         app._last_export_page_size = page_size
         app._last_export_output_path = file_path
+    except Exception:
+        pass
+
+    try:
+        if hasattr(app, 'config') and isinstance(app.config, dict):
+            app.config['last_export_output_path'] = file_path
+            try:
+                from ui.theme import save_config
+                save_config(app.config)
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -305,7 +391,11 @@ def do_export_for_app(app, content: str, style: str, page_size: str) -> None:
             app.update_status("⏳ 正在转换...")
     except Exception:
         app.update_status("⏳ 正在转换...")
-    app.export_btn.configure(state="disabled")
+    try:
+        if hasattr(app, 'export_btn') and app.export_btn is not None:
+            app.export_btn.configure(state="disabled")
+    except Exception:
+        pass
     try:
         if hasattr(app, 'cancel_export_btn'):
             app.cancel_export_btn.configure(state="normal")
@@ -318,12 +408,28 @@ def do_export_for_app(app, content: str, style: str, page_size: str) -> None:
     except Exception:
         pass
 
+    last_ui_ts = 0.0
+    last_pct = -1
+
     def on_progress(done: int, total: int, block_type: str, start_line: int) -> None:
         try:
             p = 0.0
             if total:
                 p = float(done) / float(total)
             pct = int(p * 100)
+
+            now = time.monotonic()
+            # UI 刷新节流：避免进度回调过密导致界面抖动
+            # 但确保最终 100% 或 done==total 时一定刷新
+            min_interval = 0.12
+            nonlocal last_ui_ts, last_pct
+            if (done != total) and (pct == last_pct) and ((now - last_ui_ts) < min_interval):
+                return
+            if (done != total) and ((now - last_ui_ts) < min_interval):
+                return
+            last_ui_ts = now
+            last_pct = pct
+
             msg = f"⏳ 正在转换... {pct}% ({done}/{total})  {block_type}  行{start_line}"
 
             def _apply() -> None:
@@ -370,11 +476,18 @@ def do_export_for_app(app, content: str, style: str, page_size: str) -> None:
             try:
                 diag = {
                     'missing_images': [],
+                    'converter_diagnostics': {},
                 }
                 try:
                     ih = getattr(converter, 'image_handler', None)
                     if ih is not None and hasattr(ih, 'get_issues'):
                         diag['missing_images'] = [it for it in (ih.get_issues() or []) if isinstance(it, dict)]
+                except Exception:
+                    pass
+                try:
+                    cd = getattr(converter, 'diagnostics', None)
+                    if isinstance(cd, dict):
+                        diag['converter_diagnostics'] = cd
                 except Exception:
                     pass
                 app._last_export_diagnostics = diag
@@ -396,7 +509,11 @@ def do_export_for_app(app, content: str, style: str, page_size: str) -> None:
 
 def on_export_success_for_app(app, file_path: str) -> None:
     """导出成功回调。"""
-    app.export_btn.configure(state="normal")
+    try:
+        if hasattr(app, 'export_btn') and app.export_btn is not None:
+            app.export_btn.configure(state="normal")
+    except Exception:
+        pass
     try:
         if hasattr(app, 'status_bar_feature') and app.status_bar_feature is not None:
             app.status_bar_feature.update_progress(None, None)
@@ -421,6 +538,11 @@ def on_export_success_for_app(app, file_path: str) -> None:
         )
     except Exception:
         pass
+    try:
+        if hasattr(app, 'busy') and app.busy is not None:
+            app.busy.exit()
+    except Exception:
+        pass
     app.update_status(f"✅ 导出成功: {os.path.basename(file_path)}")
 
     # 如果存在缺失图片等问题，提示保存诊断报告
@@ -428,11 +550,116 @@ def on_export_success_for_app(app, file_path: str) -> None:
         diag = getattr(app, '_last_export_diagnostics', None) or {}
         missing = diag.get('missing_images') if isinstance(diag, dict) else None
         if isinstance(missing, list) and missing:
-            if messagebox.askyesno(
-                '导出完成（有告警）',
-                f"导出完成，但检测到 {len(missing)} 个图片无法加载。\n\n是否保存诊断报告？",
-            ):
-                _save_diagnostic_report_for_app(app, error_details=None)
+            def _show_missing_dialog() -> None:
+                win = ctk.CTkToplevel(app)
+                win.title('导出完成（有告警）')
+                try:
+                    apply_window_icon(win)
+                except Exception:
+                    pass
+                try:
+                    attach_window_geometry(app, win, 'export_missing_images')
+                except Exception:
+                    pass
+                win.geometry('720x520')
+                win.transient(app)
+                win.grab_set()
+
+                try:
+                    win.update_idletasks()
+                    x = app.winfo_x() + (app.winfo_width() - 720) // 2
+                    y = app.winfo_y() + (app.winfo_height() - 520) // 2
+                    win.geometry(f'+{x}+{y}')
+                except Exception:
+                    pass
+
+                container = ctk.CTkFrame(win, fg_color=COLORS['bg_card'])
+                container.pack(fill='both', expand=True, padx=14, pady=14)
+
+                ctk.CTkLabel(
+                    container,
+                    text='⚠ 导出完成（有告警）',
+                    font=ctk.CTkFont(size=18, weight='bold'),
+                    text_color=COLORS['text_primary'],
+                ).pack(anchor='w', padx=12, pady=(10, 6))
+
+                ctk.CTkLabel(
+                    container,
+                    text=f"检测到 {len(missing)} 个图片无法加载（可能是路径错误/文件缺失/网络图片不可用）。",
+                    justify='left',
+                    wraplength=660,
+                    text_color=COLORS['text_primary'],
+                ).pack(anchor='w', padx=12, pady=(0, 10))
+
+                txt_frame = ctk.CTkFrame(container, fg_color='transparent')
+                txt_frame.pack(fill='both', expand=True, padx=12, pady=(0, 10))
+
+                detail_lines = []
+                for it in missing[:200]:
+                    try:
+                        detail_lines.append(str(it))
+                    except Exception:
+                        pass
+                if len(missing) > 200:
+                    detail_lines.append(f'... 还有 {len(missing) - 200} 条未显示')
+
+                txt = tk.Text(txt_frame, height=14, wrap='word')
+                txt.insert('1.0', '\n'.join(detail_lines))
+                txt.configure(state='disabled')
+                txt.pack(fill='both', expand=True)
+
+                btns = ctk.CTkFrame(container, fg_color='transparent')
+                btns.pack(fill='x', padx=12, pady=(0, 10))
+
+                def copy_list() -> None:
+                    try:
+                        app.clipboard_clear()
+                        app.clipboard_append('\n'.join(detail_lines))
+                        try:
+                            app.update_status('✅ 已复制缺失图片列表')
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+
+                ctk.CTkButton(
+                    btns,
+                    text='复制列表',
+                    fg_color='transparent',
+                    border_width=1,
+                    border_color=COLORS['border'],
+                    text_color=COLORS['text_primary'],
+                    command=copy_list,
+                    width=110,
+                ).pack(side='left')
+
+                ctk.CTkButton(
+                    btns,
+                    text='保存诊断报告',
+                    fg_color='transparent',
+                    border_width=1,
+                    border_color=COLORS['border'],
+                    text_color=COLORS['text_primary'],
+                    command=lambda: _save_diagnostic_report_for_app(app, error_details=None),
+                    width=130,
+                ).pack(side='left', padx=8)
+
+                ctk.CTkButton(
+                    btns,
+                    text='关闭',
+                    fg_color=COLORS['primary'],
+                    command=win.destroy,
+                    width=90,
+                ).pack(side='right')
+
+            try:
+                _show_missing_dialog()
+            except Exception:
+                if messagebox.askyesno(
+                    '导出完成（有告警）',
+                    f"导出完成，但检测到 {len(missing)} 个图片无法加载。\n\n是否保存诊断报告？",
+                ):
+                    _save_diagnostic_report_for_app(app, error_details=None)
     except Exception:
         pass
 
@@ -472,12 +699,21 @@ def on_export_cancel_for_app(app) -> None:
         )
     except Exception:
         pass
+    try:
+        if hasattr(app, 'busy') and app.busy is not None:
+            app.busy.exit("⛔ 已取消导出")
+    except Exception:
+        pass
     app.update_status("⛔ 已取消导出")
 
 
 def on_export_error_for_app(app, error: str) -> None:
     """导出失败回调。"""
-    app.export_btn.configure(state="normal")
+    try:
+        if hasattr(app, 'export_btn') and app.export_btn is not None:
+            app.export_btn.configure(state="normal")
+    except Exception:
+        pass
     try:
         if hasattr(app, 'status_bar_feature') and app.status_bar_feature is not None:
             app.status_bar_feature.update_progress(None, None)
@@ -490,6 +726,11 @@ def on_export_error_for_app(app, error: str) -> None:
         pass
     try:
         app._export_cancel_event = None
+    except Exception:
+        pass
+    try:
+        if hasattr(app, 'busy') and app.busy is not None:
+            app.busy.exit("❌ 导出失败")
     except Exception:
         pass
     app.update_status("❌ 导出失败")
@@ -513,6 +754,14 @@ def on_export_error_for_app(app, error: str) -> None:
     def _show_error_dialog(summary: str, details: str) -> None:
         win = ctk.CTkToplevel(app)
         win.title("导出错误")
+        try:
+            apply_window_icon(win)
+        except Exception:
+            pass
+        try:
+            attach_window_geometry(app, win, 'export_error')
+        except Exception:
+            pass
         win.geometry("720x460")
         win.transient(app)
         win.grab_set()
@@ -565,10 +814,27 @@ def on_export_error_for_app(app, error: str) -> None:
                 except Exception:
                     pass
 
+        def copy_summary() -> None:
+            try:
+                app.clipboard_clear()
+                app.clipboard_append(summary)
+                try:
+                    if hasattr(app, 'update_status'):
+                        app.update_status('✅ 已复制摘要')
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
         def copy_detail() -> None:
             try:
                 app.clipboard_clear()
                 app.clipboard_append(details)
+                try:
+                    if hasattr(app, 'update_status'):
+                        app.update_status('✅ 已复制详情')
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -594,6 +860,17 @@ def on_export_error_for_app(app, error: str) -> None:
             command=copy_detail,
             width=110,
         ).pack(side='left', padx=8)
+
+        ctk.CTkButton(
+            btns,
+            text='复制摘要',
+            fg_color='transparent',
+            border_width=1,
+            border_color=COLORS['border'],
+            text_color=COLORS['text_primary'],
+            command=copy_summary,
+            width=110,
+        ).pack(side='left')
 
         ctk.CTkButton(
             btns,
@@ -697,6 +974,53 @@ def _build_diagnostic_report_for_app(app, error_details: str = None) -> str:
                         pass
                 lines.append('')
 
+            cd = diag.get('converter_diagnostics')
+            if isinstance(cd, dict) and cd:
+                try:
+                    inc = cd.get('include_issues')
+                    if isinstance(inc, list) and inc:
+                        lines.append('--- include 问题 ---')
+                        for it in inc[:500]:
+                            try:
+                                lines.append(str(it))
+                            except Exception:
+                                pass
+                        lines.append('')
+                except Exception:
+                    pass
+
+                try:
+                    inc_files = cd.get('included_files')
+                    if isinstance(inc_files, list) and inc_files:
+                        lines.append('--- include 文件列表 ---')
+                        for it in inc_files[:500]:
+                            try:
+                                lines.append(str(it))
+                            except Exception:
+                                pass
+                        lines.append('')
+                except Exception:
+                    pass
+
+                try:
+                    ur = cd.get('unresolved_refs')
+                    if isinstance(ur, list) and ur:
+                        lines.append('--- 未解析引用 ---')
+                        # 去重保持顺序
+                        seen = set()
+                        for it in ur:
+                            try:
+                                s = str(it)
+                            except Exception:
+                                continue
+                            if s in seen:
+                                continue
+                            seen.add(s)
+                            lines.append(s)
+                        lines.append('')
+                except Exception:
+                    pass
+
         if error_details:
             lines.append('--- 错误详情 ---')
             try:
@@ -714,16 +1038,39 @@ def _save_diagnostic_report_for_app(app, error_details: str = None) -> None:
     try:
         report = _build_diagnostic_report_for_app(app, error_details=error_details)
         default_name = 'md2word_diagnostic.txt'
+
+        initial_dir = None
+        try:
+            initial_dir = (getattr(app, 'config', None) or {}).get('last_save_dir')
+            if initial_dir and not os.path.isdir(str(initial_dir)):
+                initial_dir = None
+        except Exception:
+            initial_dir = None
+
         path = filedialog.asksaveasfilename(
             title='保存诊断报告',
             defaultextension='.txt',
             initialfile=default_name,
+            initialdir=initial_dir,
             filetypes=[('Text', '*.txt')],
         )
         if not path:
             return
         with open(path, 'w', encoding='utf-8') as f:
             f.write(report)
+
+        try:
+            cfg = getattr(app, 'config', None)
+            if isinstance(cfg, dict):
+                cfg['last_save_dir'] = os.path.dirname(path)
+                try:
+                    from ui.theme import save_config
+                    save_config(cfg)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         try:
             if hasattr(app, 'update_status'):
                 app.update_status(f"✅ 已保存诊断报告: {os.path.basename(path)}")

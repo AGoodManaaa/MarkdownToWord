@@ -3,6 +3,7 @@
 import os
 import json
 import copy
+import re
 import customtkinter as ctk
 
 # 主题初始化
@@ -137,6 +138,17 @@ DEFAULT_EXPORT_STYLE = {
     'image_caption_template': '图 {num}: {text}',
     'table_caption_template': '表 {num}: {text}',
     'caption_font': 'Times New Roman',
+
+    # 样式映射（方案B）：优先使用 Word 样式控制排版
+    'use_word_styles': True,
+    'map_heading_1': 'Heading 1',
+    'map_heading_2': 'Heading 2',
+    'map_heading_3': 'Heading 3',
+    'map_heading_4': 'Heading 4',
+    'map_paragraph': 'Normal',
+    'map_quote': 'Block Quote',
+    'map_image_caption': 'Caption',
+    'map_table_caption': 'Caption',
 }
 
 
@@ -146,6 +158,11 @@ DEFAULT_CONFIG = {
     'theme': 'light',
     'sidebar_visible': True,
     'sidebar_width': 250,
+    'window_geometries': {},
+    'last_open_dir': None,
+    'last_save_dir': None,
+    'last_export_output_path': None,
+    'export_auto_format_markdown': False,
     'export_style': DEFAULT_EXPORT_STYLE,
     'export_style_presets': {},
     'export_history': [],
@@ -187,3 +204,153 @@ def save_config(config: dict):
             json.dump(config, f, ensure_ascii=False, indent=2)
     except (IOError, OSError):
         pass
+
+
+def apply_window_icon(win) -> None:
+    """统一设置弹窗图标为项目根目录下的 app.ico（Windows）。"""
+    try:
+        root_dir = os.path.dirname(os.path.dirname(__file__))
+        icon_path = os.path.join(root_dir, 'app.ico')
+        if not os.path.exists(icon_path):
+            return
+
+        def _apply() -> None:
+            # Windows: wm_iconbitmap 通常对 Toplevel 更稳定
+            try:
+                win.wm_iconbitmap(icon_path)
+                return
+            except Exception:
+                pass
+            try:
+                win.iconbitmap(icon_path)
+            except Exception:
+                pass
+
+        try:
+            # 部分 CTkToplevel 需要等窗口创建后再设置，且可能需要多次重试
+            win.after(0, _apply)
+            win.after(120, _apply)
+            win.after(600, _apply)
+        except Exception:
+            _apply()
+    except Exception:
+        pass
+
+
+def attach_window_geometry(app, win, key: str) -> bool:
+    """为任意窗口/弹窗保存并恢复上一次位置与大小。
+
+    - key: 配置中的唯一标识（例如 'export_options' / 'format_dialog'）。
+    """
+    if not key:
+        return False
+
+    restored = False
+
+    # 先恢复
+    try:
+        cfg = getattr(app, 'config', None)
+        if isinstance(cfg, dict):
+            store = cfg.get('window_geometries')
+            if isinstance(store, dict):
+                geo = store.get(str(key))
+                if isinstance(geo, str) and geo:
+                    try:
+                        # 校验 geometry 是否在屏幕范围内（避免跑偏到屏幕外/过低）
+                        m = re.match(r'^\s*(\d+)x(\d+)\+(-?\d+)\+(-?\d+)\s*$', geo)
+                        if m:
+                            w = int(m.group(1))
+                            h = int(m.group(2))
+                            x = int(m.group(3))
+                            y = int(m.group(4))
+                            try:
+                                sw = int(win.winfo_screenwidth())
+                                sh = int(win.winfo_screenheight())
+                            except Exception:
+                                sw = 0
+                                sh = 0
+
+                            # 给一个边界容错，窗口只要至少有一部分可见就认为有效
+                            if (sw and sh) and (x > sw - 60 or y > sh - 60 or x < -w + 60 or y < -h + 60):
+                                raise ValueError('geometry_out_of_screen')
+
+                        win.geometry(geo)
+                        restored = True
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    # 再绑定保存（节流）
+    state = {'after_id': None}
+
+    def _save_now() -> None:
+        try:
+            cfg = getattr(app, 'config', None)
+            if not isinstance(cfg, dict):
+                return
+            store = cfg.get('window_geometries')
+            if not isinstance(store, dict):
+                store = {}
+                cfg['window_geometries'] = store
+
+            try:
+                geo = str(win.geometry())
+            except Exception:
+                return
+            if not geo:
+                return
+
+            store[str(key)] = geo
+            try:
+                save_config(cfg)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _schedule_save(event=None) -> None:  # noqa: ARG001
+        try:
+            if state['after_id'] is not None:
+                try:
+                    win.after_cancel(state['after_id'])
+                except Exception:
+                    pass
+            state['after_id'] = win.after(400, _save_now)
+        except Exception:
+            state['after_id'] = None
+
+    try:
+        win.bind('<Configure>', _schedule_save, add='+')
+    except Exception:
+        pass
+
+    # 关闭前确保保存一次
+    try:
+        prev = None
+        try:
+            prev = win.protocol('WM_DELETE_WINDOW')
+        except Exception:
+            prev = None
+
+        def _on_close() -> None:
+            try:
+                _save_now()
+            except Exception:
+                pass
+            try:
+                if callable(prev):
+                    prev()
+                else:
+                    win.destroy()
+            except Exception:
+                try:
+                    win.destroy()
+                except Exception:
+                    pass
+
+        win.protocol('WM_DELETE_WINDOW', _on_close)
+    except Exception:
+        pass
+
+    return restored
