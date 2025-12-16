@@ -105,6 +105,12 @@ class MarkdownToWordConverter:
         # 创建新文档
         self.doc = Document()
         setup_document_styles(self.doc, style=self.style, page_size=self.page_size, style_overrides=self.export_style)
+
+        # 是否打开时自动更新字段（目录/编号等）
+        try:
+            self._set_update_fields_on_open(bool(self.export_style.get('update_fields_on_open', True)))
+        except Exception:
+            pass
         
         # 预处理文本
         markdown_text = clean_text(markdown_text)
@@ -147,6 +153,23 @@ class MarkdownToWordConverter:
                 ) from e
         
         return self.doc
+
+    def _set_update_fields_on_open(self, enabled: bool) -> None:
+        """设置 Word 打开文档时是否自动更新域（fields）。"""
+        try:
+            settings = self.doc.settings.element
+            # 先移除已有的 updateFields
+            try:
+                for el in settings.findall(qn('w:updateFields')):
+                    settings.remove(el)
+            except Exception:
+                pass
+
+            el = OxmlElement('w:updateFields')
+            el.set(qn('w:val'), 'true' if enabled else 'false')
+            settings.append(el)
+        except Exception:
+            pass
     
     def _split_into_blocks(self, text: str) -> list:
         """
@@ -233,6 +256,12 @@ class MarkdownToWordConverter:
             img_match = re.match(r'^!\[([^\]]*)\]\(([^\)]+)\)$', line.strip())
             if img_match:
                 blocks.append({'type': 'image', 'content': (img_match.group(1), img_match.group(2)), 'start_line': i + 1})
+                i += 1
+                continue
+
+            # 目录标记 [[TOC]]（单独一行）
+            if line.strip() == '[[TOC]]':
+                blocks.append({'type': 'toc', 'content': '', 'start_line': i + 1})
                 i += 1
                 continue
             
@@ -425,6 +454,10 @@ class MarkdownToWordConverter:
         elif block_type == 'image':
             alt_text, image_path = content
             self.image_handler.add_image(self.doc, image_path, alt_text)
+
+        elif block_type == 'toc':
+            if bool(self.export_style.get('toc_enabled', False)):
+                self._add_toc()
         
         elif block_type == 'hr':
             # 添加水平分割线（使用段落底部边框）
@@ -443,6 +476,40 @@ class MarkdownToWordConverter:
             bottom.set(qn('w:color'), '808080')  # 灰色
             pBdr.append(bottom)
             pPr.append(pBdr)
+
+    def _add_toc(self) -> None:
+        """在当前位置插入 Word 目录域（TOC）。"""
+        try:
+            para = self.doc.add_paragraph()
+            run = para.add_run()
+
+            fld_begin = OxmlElement('w:fldChar')
+            fld_begin.set(qn('w:fldCharType'), 'begin')
+
+            instr = OxmlElement('w:instrText')
+            instr.set(qn('xml:space'), 'preserve')
+            # 1-3 级标题；支持超链接；隐藏页码在 web 视图的提示等
+            instr.text = 'TOC \\o "1-3" \\h \\z \\u'
+
+            fld_sep = OxmlElement('w:fldChar')
+            fld_sep.set(qn('w:fldCharType'), 'separate')
+
+            # placeholder
+            t = OxmlElement('w:t')
+            t.text = '目录将在打开文档后自动生成/更新'
+
+            fld_end = OxmlElement('w:fldChar')
+            fld_end.set(qn('w:fldCharType'), 'end')
+
+            r = run._r
+            r.append(fld_begin)
+            r.append(instr)
+            r.append(fld_sep)
+            r.append(t)
+            r.append(fld_end)
+        except Exception:
+            # 失败时不抛异常，避免影响导出
+            pass
     
     def _add_heading(self, text: str, level: int) -> None:
         """添加标题 - 支持公式等行内元素解析"""
@@ -666,6 +733,27 @@ class MarkdownToWordConverter:
         
         # 创建表格
         table = self.doc.add_table(rows=num_rows, cols=num_cols)
+
+        # 表格宽度：按页面可用宽度等分列宽，避免超出页边距
+        try:
+            if self.doc.sections:
+                sec = self.doc.sections[0]
+                available = sec.page_width - sec.left_margin - sec.right_margin
+                if num_cols > 0 and available is not None:
+                    table.autofit = False
+                    col_w = int(available / num_cols)
+                    for i in range(num_cols):
+                        try:
+                            table.columns[i].width = col_w
+                        except Exception:
+                            pass
+                        try:
+                            for c in table.columns[i].cells:
+                                c.width = col_w
+                        except Exception:
+                            pass
+        except Exception:
+            pass
         
         # 填充表头（表头始终居中）
         for i, header in enumerate(headers):
@@ -678,6 +766,16 @@ class MarkdownToWordConverter:
             for run in para.runs:
                 self._set_body_font(run, keep_style=True)
                 run.bold = True  # 表头加粗
+
+        # A方案：所有表格默认第一行重复为表头（跨页自动重复）
+        try:
+            tr = table.rows[0]._tr
+            trPr = tr.get_or_add_trPr()
+            tblHeader = OxmlElement('w:tblHeader')
+            tblHeader.set(qn('w:val'), 'true')
+            trPr.append(tblHeader)
+        except Exception:
+            pass
         
         # 填充数据行（根据对齐方式设置）
         for row_idx, row_data in enumerate(rows):
@@ -703,7 +801,7 @@ class MarkdownToWordConverter:
                         self._set_body_font(run, keep_style=True)
         
         # 应用表格样式
-        apply_table_style(table)
+        apply_table_style(table, self.export_style)
     
     def _add_inline_content(self, paragraph, text: str, base_bold: bool = False, base_italic: bool = False) -> None:
         """处理行内元素：使用共用解析器，支持嵌套公式解析

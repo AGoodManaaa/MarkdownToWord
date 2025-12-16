@@ -26,6 +26,37 @@ class ImageHandler:
         self.base_dir = base_dir
         self.image_counter = 0
         self.style_config = style_config if isinstance(style_config, dict) else {}
+        self.issues = []
+
+    def reset_issues(self) -> None:
+        try:
+            self.issues = []
+        except Exception:
+            pass
+
+    def get_issues(self) -> list:
+        try:
+            return list(self.issues or [])
+        except Exception:
+            return []
+
+    def _guess_max_width_in(self, doc: Document, fallback_in: float = 6.0) -> float:
+        try:
+            if doc is not None and getattr(doc, 'sections', None):
+                sec = doc.sections[0]
+                available = sec.page_width - sec.left_margin - sec.right_margin
+                try:
+                    available_in = float(available.inches)
+                except Exception:
+                    available_in = None
+                if available_in and available_in > 0:
+                    return max(1.0, available_in)
+        except Exception:
+            pass
+        try:
+            return float(fallback_in)
+        except Exception:
+            return 6.0
     
     def add_image(self, doc: Document, image_path: str, alt_text: str = "", 
                   caption: str = None, max_width: float = 6.0) -> bool:
@@ -40,14 +71,19 @@ class ImageHandler:
             para = doc.add_paragraph()
             run = para.add_run(f"[图片无法加载: {image_path}]")
             run.font.color.rgb = RGBColor(255, 0, 0)
+            try:
+                self.issues.append({'type': 'missing_image', 'path': image_path, 'reason': 'not_found'})
+            except Exception:
+                pass
             return False
         
         try:
-            # max width override
+            max_width = self._guess_max_width_in(doc, fallback_in=max_width)
+
             max_width_cfg = self.style_config.get('image_max_width_in')
             if max_width_cfg is not None:
                 try:
-                    max_width = float(max_width_cfg)
+                    max_width = min(max_width, float(max_width_cfg))
                 except Exception:
                     pass
 
@@ -92,6 +128,10 @@ class ImageHandler:
             para = doc.add_paragraph()
             run = para.add_run(f"[图片加载错误: {image_path}]")
             run.font.color.rgb = RGBColor(255, 0, 0)
+            try:
+                self.issues.append({'type': 'missing_image', 'path': image_path, 'reason': 'load_error'})
+            except Exception:
+                pass
             return False
 
     def add_inline_image(self, paragraph, image_path: str, alt_text: str = "", max_width: float = 6.0) -> bool:
@@ -100,9 +140,26 @@ class ImageHandler:
         if not resolved_path:
             run = paragraph.add_run(f"[图片无法加载: {image_path}]")
             run.font.color.rgb = RGBColor(255, 0, 0)
+            try:
+                self.issues.append({'type': 'missing_image', 'path': image_path, 'reason': 'not_found'})
+            except Exception:
+                pass
             return False
 
         try:
+            try:
+                doc = getattr(paragraph, 'part', None)
+                doc = getattr(doc, 'document', None)
+            except Exception:
+                doc = None
+
+            max_width = self._guess_max_width_in(doc, fallback_in=max_width)
+            max_width_cfg = self.style_config.get('image_max_width_in')
+            if max_width_cfg is not None:
+                try:
+                    max_width = min(max_width, float(max_width_cfg))
+                except Exception:
+                    pass
             width_inches, height_inches = get_image_dimensions(resolved_path, max_width)
             run = paragraph.add_run()
             run.add_picture(resolved_path, width=Inches(width_inches))
@@ -110,6 +167,10 @@ class ImageHandler:
         except (IOError, OSError):
             run = paragraph.add_run(f"[图片加载错误: {image_path}]")
             run.font.color.rgb = RGBColor(255, 0, 0)
+            try:
+                self.issues.append({'type': 'missing_image', 'path': image_path, 'reason': 'load_error'})
+            except Exception:
+                pass
             return False
 
 
