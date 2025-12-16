@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
@@ -110,6 +110,213 @@ class ExportStyleSettingsDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(size=18, weight='bold'),
             text_color=COLORS['text_primary'],
         ).pack(anchor='w', padx=12, pady=(10, 8))
+
+        presets = {}
+        try:
+            presets = (app.config or {}).get('export_style_presets') or {}
+        except Exception:
+            presets = {}
+        if not isinstance(presets, dict):
+            presets = {}
+
+        preset_frame = ctk.CTkFrame(container, fg_color='transparent')
+        preset_frame.pack(fill='x', padx=12, pady=(0, 10))
+
+        ctk.CTkLabel(
+            preset_frame,
+            text='预设：',
+            text_color=COLORS['text_primary'],
+        ).pack(side='left')
+
+        preset_names = sorted([str(k) for k in presets.keys() if str(k).strip()])
+        preset_var = ctk.StringVar(value=(preset_names[0] if preset_names else ''))
+        preset_menu = ctk.CTkOptionMenu(
+            preset_frame,
+            variable=preset_var,
+            values=(preset_names if preset_names else ['']),
+            width=180,
+        )
+        preset_menu.pack(side='left', padx=(6, 8))
+
+        def _refresh_preset_menu(select_name: str = None):
+            nonlocal presets
+            try:
+                presets = (app.config or {}).get('export_style_presets') or {}
+            except Exception:
+                presets = {}
+            if not isinstance(presets, dict):
+                presets = {}
+
+            names = sorted([str(k) for k in presets.keys() if str(k).strip()])
+            try:
+                preset_menu.configure(values=(names if names else ['']))
+            except Exception:
+                pass
+
+            target = select_name
+            if target is None:
+                try:
+                    target = preset_var.get()
+                except Exception:
+                    target = ''
+
+            if target and target in names:
+                try:
+                    preset_var.set(target)
+                except Exception:
+                    pass
+            else:
+                try:
+                    preset_var.set(names[0] if names else '')
+                except Exception:
+                    pass
+
+        def _collect_style_from_ui() -> dict:
+            new_style = {}
+            for k, var in self._vars.items():
+                kind = self._field_types.get(k)
+                try:
+                    v = var.get()
+                except Exception:
+                    continue
+
+                if kind == 'bool':
+                    new_style[k] = bool(v)
+                elif kind == 'float':
+                    try:
+                        new_style[k] = float(v)
+                    except Exception:
+                        new_style[k] = self._style.get(k)
+                else:
+                    new_style[k] = v
+            return new_style
+
+        def _apply_style_to_ui(style_dict: dict) -> None:
+            if not isinstance(style_dict, dict):
+                return
+            for k, v in style_dict.items():
+                var = self._vars.get(k)
+                if var is None:
+                    continue
+                try:
+                    var.set(v)
+                except Exception:
+                    try:
+                        var.set(str(v))
+                    except Exception:
+                        pass
+
+        def load_preset() -> None:
+            name = ''
+            try:
+                name = str(preset_var.get() or '').strip()
+            except Exception:
+                name = ''
+            if not name:
+                messagebox.showwarning('提示', '请先选择一个预设')
+                return
+
+            st = presets.get(name)
+            if not isinstance(st, dict):
+                messagebox.showerror('加载失败', '该预设格式不正确')
+                return
+
+            base_style = get_default_export_style()
+            merged = {**base_style, **st}
+            _apply_style_to_ui(merged)
+            try:
+                self._style = {**self._style, **merged}
+                self.app.update_status(f'✅ 已加载预设: {name}')
+            except Exception:
+                pass
+
+        def save_as_preset() -> None:
+            name = simpledialog.askstring('保存为预设', '请输入预设名称：', parent=self)
+            if not name:
+                return
+            name = str(name).strip()
+            if not name:
+                return
+
+            new_style = _collect_style_from_ui()
+            try:
+                if not isinstance(self.app.config, dict):
+                    self.app.config = {}
+                ps = self.app.config.get('export_style_presets')
+                if not isinstance(ps, dict):
+                    ps = {}
+                ps[name] = new_style
+                self.app.config['export_style_presets'] = ps
+                save_config(self.app.config)
+                _refresh_preset_menu(select_name=name)
+                try:
+                    self.app.update_status(f'✅ 已保存预设: {name}')
+                except Exception:
+                    pass
+            except Exception:
+                messagebox.showerror('保存失败', '无法保存预设（请检查配置文件权限）')
+
+        def delete_preset() -> None:
+            name = ''
+            try:
+                name = str(preset_var.get() or '').strip()
+            except Exception:
+                name = ''
+            if not name:
+                messagebox.showwarning('提示', '请先选择一个预设')
+                return
+            if not messagebox.askyesno('删除预设', f'确定删除预设: {name} ？'):
+                return
+            try:
+                if not isinstance(self.app.config, dict):
+                    self.app.config = {}
+                ps = self.app.config.get('export_style_presets')
+                if not isinstance(ps, dict):
+                    ps = {}
+                if name in ps:
+                    ps.pop(name, None)
+                self.app.config['export_style_presets'] = ps
+                save_config(self.app.config)
+                _refresh_preset_menu(select_name=None)
+                try:
+                    self.app.update_status(f'🗑️ 已删除预设: {name}')
+                except Exception:
+                    pass
+            except Exception:
+                messagebox.showerror('删除失败', '无法删除预设')
+
+        ctk.CTkButton(
+            preset_frame,
+            text='加载',
+            command=load_preset,
+            fg_color='transparent',
+            border_width=1,
+            border_color=COLORS['border'],
+            text_color=COLORS['text_primary'],
+            width=70,
+        ).pack(side='left')
+
+        ctk.CTkButton(
+            preset_frame,
+            text='另存为',
+            command=save_as_preset,
+            fg_color='transparent',
+            border_width=1,
+            border_color=COLORS['border'],
+            text_color=COLORS['text_primary'],
+            width=80,
+        ).pack(side='left', padx=(8, 0))
+
+        ctk.CTkButton(
+            preset_frame,
+            text='删除',
+            command=delete_preset,
+            fg_color='transparent',
+            border_width=1,
+            border_color=COLORS['border'],
+            text_color=COLORS['text_primary'],
+            width=70,
+        ).pack(side='left', padx=(8, 0))
 
         scroll = ctk.CTkScrollableFrame(container, fg_color='transparent')
         scroll.pack(fill='both', expand=True, padx=10, pady=(0, 10))

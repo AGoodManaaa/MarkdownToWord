@@ -130,6 +130,40 @@ def show_export_options_for_app(app, content: str) -> None:
         variable=remote_var,
     ).pack(anchor="w", pady=(6, 0), padx=10)
 
+    # 目录与字段更新
+    toc_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+    toc_frame.pack(fill="x", padx=30, pady=(10, 0))
+
+    ctk.CTkLabel(
+        toc_frame,
+        text="目录（TOC）：",
+        font=ctk.CTkFont(size=14),
+    ).pack(anchor="w")
+
+    toc_enabled = False
+    update_fields = True
+    try:
+        toc_enabled = bool((app.config or {}).get('export_toc_enabled', False))
+        update_fields = bool((app.config or {}).get('export_update_fields_on_open', True))
+    except Exception:
+        toc_enabled = False
+        update_fields = True
+
+    toc_var = ctk.BooleanVar(value=toc_enabled)
+    update_fields_var = ctk.BooleanVar(value=update_fields)
+
+    ctk.CTkSwitch(
+        toc_frame,
+        text="启用 [[TOC]] 标记生成目录",
+        variable=toc_var,
+    ).pack(anchor="w", pady=(6, 0), padx=10)
+
+    ctk.CTkSwitch(
+        toc_frame,
+        text="打开文档时自动更新目录/编号",
+        variable=update_fields_var,
+    ).pack(anchor="w", pady=(6, 0), padx=10)
+
     # 按钮
     btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
     btn_frame.pack(fill="x", padx=30, pady=20)
@@ -141,6 +175,8 @@ def show_export_options_for_app(app, content: str) -> None:
                 app.config['last_export_style'] = style_var.get()
                 app.config['last_export_page_size'] = page_var.get()
                 app.config['preflight_check_remote_images'] = bool(remote_var.get())
+                app.config['export_toc_enabled'] = bool(toc_var.get())
+                app.config['export_update_fields_on_open'] = bool(update_fields_var.get())
                 try:
                     from ui.theme import save_config
                     save_config(app.config)
@@ -211,6 +247,11 @@ def do_export_for_app(app, content: str, style: str, page_size: str) -> None:
         )
     except Exception:
         issues = []
+
+    try:
+        app._last_preflight_issues = list(issues or [])
+    except Exception:
+        pass
 
     if issues:
         preview_lines = []
@@ -304,13 +345,42 @@ def do_export_for_app(app, content: str, style: str, page_size: str) -> None:
     # 在线程中执行转换
     def convert() -> None:
         try:
+            export_style = None
+            try:
+                export_style = (app.config.get('export_style') if hasattr(app, 'config') else None)
+                if not isinstance(export_style, dict):
+                    export_style = {}
+                export_style = {
+                    **export_style,
+                    'toc_enabled': bool((app.config or {}).get('export_toc_enabled', False)),
+                    'update_fields_on_open': bool((app.config or {}).get('export_update_fields_on_open', True)),
+                }
+            except Exception:
+                export_style = (app.config.get('export_style') if hasattr(app, 'config') else None)
+
             converter = MarkdownToWordConverter(
                 base_dir=base_dir,
                 style=style,
                 page_size=page_size,
-                export_style=(app.config.get('export_style') if hasattr(app, 'config') else None),
+                export_style=export_style,
             )
             converter.convert_text(content, progress_callback=on_progress, cancel_event=cancel_event)
+
+            # 收集诊断信息（例如缺失图片）
+            try:
+                diag = {
+                    'missing_images': [],
+                }
+                try:
+                    ih = getattr(converter, 'image_handler', None)
+                    if ih is not None and hasattr(ih, 'get_issues'):
+                        diag['missing_images'] = [it for it in (ih.get_issues() or []) if isinstance(it, dict)]
+                except Exception:
+                    pass
+                app._last_export_diagnostics = diag
+            except Exception:
+                pass
+
             converter.save(file_path)
 
             app.after(0, lambda fp=file_path: on_export_success_for_app(app, fp))
@@ -352,6 +422,19 @@ def on_export_success_for_app(app, file_path: str) -> None:
     except Exception:
         pass
     app.update_status(f"✅ 导出成功: {os.path.basename(file_path)}")
+
+    # 如果存在缺失图片等问题，提示保存诊断报告
+    try:
+        diag = getattr(app, '_last_export_diagnostics', None) or {}
+        missing = diag.get('missing_images') if isinstance(diag, dict) else None
+        if isinstance(missing, list) and missing:
+            if messagebox.askyesno(
+                '导出完成（有告警）',
+                f"导出完成，但检测到 {len(missing)} 个图片无法加载。\n\n是否保存诊断报告？",
+            ):
+                _save_diagnostic_report_for_app(app, error_details=None)
+    except Exception:
+        pass
 
     if messagebox.askyesno(
         "导出成功", f"文档已保存到:\n{file_path}\n\n是否打开文件？"
@@ -514,6 +597,17 @@ def on_export_error_for_app(app, error: str) -> None:
 
         ctk.CTkButton(
             btns,
+            text='保存诊断报告',
+            fg_color='transparent',
+            border_width=1,
+            border_color=COLORS['border'],
+            text_color=COLORS['text_primary'],
+            command=lambda d=details: _save_diagnostic_report_for_app(app, error_details=d),
+            width=130,
+        ).pack(side='left')
+
+        ctk.CTkButton(
+            btns,
             text='关闭',
             fg_color=COLORS['primary'],
             command=win.destroy,
@@ -537,3 +631,103 @@ def on_export_error_for_app(app, error: str) -> None:
         _show_error_dialog(summary, details)
     except Exception:
         messagebox.showerror("导出错误", f"转换失败:\n{summary}")
+
+
+def _build_diagnostic_report_for_app(app, error_details: str = None) -> str:
+    lines = []
+    try:
+        lines.append('MarkdownToWord 诊断报告')
+        lines.append('')
+
+        try:
+            import platform
+            lines.append(f"OS: {platform.platform()}")
+        except Exception:
+            pass
+        try:
+            import sys
+            lines.append(f"Python: {sys.version}")
+        except Exception:
+            pass
+        lines.append('')
+
+        cfg = getattr(app, 'config', None)
+        if isinstance(cfg, dict):
+            lines.append('--- 配置（节选）---')
+            try:
+                lines.append(f"last_export_style: {cfg.get('last_export_style')}")
+                lines.append(f"last_export_page_size: {cfg.get('last_export_page_size')}")
+                lines.append(f"export_toc_enabled: {cfg.get('export_toc_enabled')}")
+                lines.append(f"export_update_fields_on_open: {cfg.get('export_update_fields_on_open')}")
+                lines.append(f"preflight_check_remote_images: {cfg.get('preflight_check_remote_images')}")
+            except Exception:
+                pass
+            lines.append('')
+
+        lines.append('--- 文件信息 ---')
+        try:
+            lines.append(f"current_file: {getattr(app, 'current_file', None)}")
+        except Exception:
+            pass
+        try:
+            lines.append(f"last_output_path: {getattr(app, '_last_export_output_path', None)}")
+        except Exception:
+            pass
+        lines.append('')
+
+        pf = getattr(app, '_last_preflight_issues', None)
+        if isinstance(pf, list) and pf:
+            lines.append('--- 导出前检查（preflight）---')
+            for it in pf[:200]:
+                try:
+                    lines.append(str(it))
+                except Exception:
+                    pass
+            lines.append('')
+
+        diag = getattr(app, '_last_export_diagnostics', None)
+        if isinstance(diag, dict):
+            missing = diag.get('missing_images')
+            if isinstance(missing, list) and missing:
+                lines.append('--- 缺失图片 ---')
+                for it in missing[:500]:
+                    try:
+                        lines.append(str(it))
+                    except Exception:
+                        pass
+                lines.append('')
+
+        if error_details:
+            lines.append('--- 错误详情 ---')
+            try:
+                lines.append(str(error_details))
+            except Exception:
+                pass
+            lines.append('')
+    except Exception:
+        pass
+
+    return "\n".join(lines).strip() + "\n"
+
+
+def _save_diagnostic_report_for_app(app, error_details: str = None) -> None:
+    try:
+        report = _build_diagnostic_report_for_app(app, error_details=error_details)
+        default_name = 'md2word_diagnostic.txt'
+        path = filedialog.asksaveasfilename(
+            title='保存诊断报告',
+            defaultextension='.txt',
+            initialfile=default_name,
+            filetypes=[('Text', '*.txt')],
+        )
+        if not path:
+            return
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(report)
+        try:
+            if hasattr(app, 'update_status'):
+                app.update_status(f"✅ 已保存诊断报告: {os.path.basename(path)}")
+        except Exception:
+            pass
+    except Exception:
+        pass

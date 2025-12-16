@@ -93,6 +93,8 @@ class MarkdownPreview(ctk.CTkFrame):
         self.text.bind('<<Cut>>', self._block_edit_event)
         self.text.bind('<Control-v>', self._block_edit_event)
         self.text.bind('<Control-x>', self._block_edit_event)
+        self.text.bind('<Control-c>', self._copy_selection)
+        self.text.bind('<Control-C>', self._copy_selection)
         self.text.bind('<Control-b>', self._block_edit_event)
         self.text.bind('<Control-i>', self._block_edit_event)
         self.text.bind('<BackSpace>', self._block_edit_event)
@@ -115,10 +117,24 @@ class MarkdownPreview(ctk.CTkFrame):
         """只读预览区：拦截会修改内容的事件（但不影响选中/复制）。"""
         try:
             if bool(getattr(self, '_readonly', False)):
+                # 允许 Ctrl+C 复制（否则会被 <Key> 的拦截吞掉）
+                try:
+                    if event is not None and (event.state & 0x0004) and str(getattr(event, 'keysym', '')).lower() == 'c':
+                        return None
+                except Exception:
+                    pass
                 return 'break'
         except Exception:
             return 'break'
         return None
+
+    def _copy_selection(self, event=None):
+        """预览区 Ctrl+C：复制选中内容到剪贴板。"""
+        try:
+            self.text.event_generate('<<Copy>>')
+        except Exception:
+            pass
+        return 'break'
 
     def _select_all(self, event=None):
         """支持 Ctrl+A 全选（只读模式下也可用）。"""
