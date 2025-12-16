@@ -59,7 +59,7 @@ class MarkdownPreview(ctk.CTkFrame):
             padx=20,
             pady=30,
             relief='flat',
-            cursor='xterm',  # 可编辑光标
+            cursor='arrow',  # 预览区只读，但可选中复制
             spacing1=0,
             spacing3=0,
             undo=True,  # 启用撤销
@@ -81,12 +81,24 @@ class MarkdownPreview(ctk.CTkFrame):
         # 公式计数器
         self.equation_counter = 0
         
-        # 绑定编辑事件
-        self.text.bind('<KeyRelease>', self._on_text_change)
+        # 预览区只读：允许选中/复制，但禁止输入/粘贴等修改
+        self._readonly = True
         try:
-            self.text.edit_modified(False)
+            self.text.configure(state='disabled')
         except Exception:
             pass
+
+        self.text.bind('<Key>', self._block_edit_event)
+        self.text.bind('<<Paste>>', self._block_edit_event)
+        self.text.bind('<<Cut>>', self._block_edit_event)
+        self.text.bind('<Control-v>', self._block_edit_event)
+        self.text.bind('<Control-x>', self._block_edit_event)
+        self.text.bind('<Control-b>', self._block_edit_event)
+        self.text.bind('<Control-i>', self._block_edit_event)
+        self.text.bind('<BackSpace>', self._block_edit_event)
+        self.text.bind('<Delete>', self._block_edit_event)
+        self.text.bind('<Return>', self._block_edit_event)
+        self.text.bind('<Control-a>', self._select_all)
         
         # 右键菜单
         self._create_context_menu()
@@ -94,20 +106,29 @@ class MarkdownPreview(ctk.CTkFrame):
     def _create_context_menu(self):
         """创建右键菜单"""
         self.context_menu = tk.Menu(self, tearoff=0)
-        self.context_menu.add_command(label="加粗 (Ctrl+B)", command=self._toggle_bold)
-        self.context_menu.add_command(label="斜体 (Ctrl+I)", command=self._toggle_italic)
-        self.context_menu.add_command(label="删除线", command=self._toggle_strikethrough)
-        self.context_menu.add_separator()
-        self.context_menu.add_command(label="上标 X²", command=self._toggle_superscript)
-        self.context_menu.add_command(label="下标 X₂", command=self._toggle_subscript)
-        self.context_menu.add_separator()
         self.context_menu.add_command(label="复制", command=lambda: self.text.event_generate('<<Copy>>'))
         self.context_menu.add_command(label="复制选中到Word（保持格式）", command=self._copy_selection_to_word)
-        self.context_menu.add_command(label="粘贴", command=lambda: self.text.event_generate('<<Paste>>'))
         
         self.text.bind('<Button-3>', self._show_context_menu)
-        self.text.bind('<Control-b>', lambda e: self._toggle_bold())
-        self.text.bind('<Control-i>', lambda e: self._toggle_italic())
+
+    def _block_edit_event(self, event=None):
+        """只读预览区：拦截会修改内容的事件（但不影响选中/复制）。"""
+        try:
+            if bool(getattr(self, '_readonly', False)):
+                return 'break'
+        except Exception:
+            return 'break'
+        return None
+
+    def _select_all(self, event=None):
+        """支持 Ctrl+A 全选（只读模式下也可用）。"""
+        try:
+            self.text.tag_add(tk.SEL, '1.0', 'end-1c')
+            self.text.mark_set(tk.INSERT, '1.0')
+            self.text.see(tk.INSERT)
+        except Exception:
+            pass
+        return 'break'
 
     def _copy_selection_to_word(self):
         try:
@@ -645,7 +666,11 @@ class MarkdownPreview(ctk.CTkFrame):
     
     def update_preview(self, markdown_text: str):
         """更新预览内容 - 使用共用解析器渲染"""
-        # 允许选中复制，因此不再切换到 disabled，仅在这里完全重绘
+        # 预览区默认只读：渲染时临时解锁写入，写完再恢复只读
+        try:
+            self.text.configure(state='normal')
+        except Exception:
+            pass
         self.text.delete('1.0', 'end')
         
         # 清除旧的公式图片，重置计数器
@@ -663,6 +688,12 @@ class MarkdownPreview(ctk.CTkFrame):
         
         for block in blocks:
             self._render_block(block)
+
+        try:
+            if bool(getattr(self, '_readonly', False)):
+                self.text.configure(state='disabled')
+        except Exception:
+            pass
     
     def _render_block(self, block):
         """渲染块级元素"""
