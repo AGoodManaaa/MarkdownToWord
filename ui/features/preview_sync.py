@@ -100,7 +100,11 @@ class PreviewSyncFeature:
             min_interval = float(self._throttle_ms_counts) / 1000.0
             if (now - self._last_counts_ts) >= min_interval:
                 self._last_counts_ts = now
-                self.app.status_bar_feature.update_counts(content)
+                # 使用详细统计功能更新状态栏
+                if hasattr(self.app, 'statistics_detail'):
+                    self.app.statistics_detail.update_status_bar(content)
+                else:
+                    self.app.status_bar_feature.update_counts(content)
         except Exception:
             pass
 
@@ -110,6 +114,12 @@ class PreviewSyncFeature:
             self.app._content_modified = new_modified
             try:
                 self.app._update_title()
+            except Exception:
+                pass
+            # 更新标签页修改状态
+            try:
+                if hasattr(self.app, 'tab_manager') and new_modified:
+                    self.app.tab_manager.mark_current_modified()
             except Exception:
                 pass
 
@@ -190,6 +200,19 @@ class PreviewSyncFeature:
         """编辑器滚动时同步预览区"""
         try:
             if hasattr(self.app, 'preview') and getattr(self.app, 'preview_visible', True):
-                self.app.preview.text.yview_moveto(position)
+                if hasattr(self.app.preview, 'sync_scroll_to'):
+                    self.app.preview.sync_scroll_to(position)
+                else:
+                    self.app.preview.text.yview_moveto(position)
+        except Exception:
+            pass
+    
+    def on_preview_scroll(self, position: float):
+        """预览区滚动时同步编辑器"""
+        try:
+            if hasattr(self.app, 'input_editor'):
+                # 避免循环触发
+                if hasattr(self.app.input_editor, '_textbox'):
+                    self.app.input_editor._textbox.yview_moveto(position)
         except Exception:
             pass

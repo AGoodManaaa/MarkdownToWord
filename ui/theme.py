@@ -173,6 +173,13 @@ DEFAULT_CONFIG = {
     # 导出选项
     'export_toc_enabled': False,
     'export_update_fields_on_open': True,
+    
+    # 预览缩放
+    'preview_zoom_scale': 1.0,
+    
+    # 多标签页
+    'open_tabs': [],
+    'active_tab_id': None,
 }
 
 
