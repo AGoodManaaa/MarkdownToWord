@@ -12,8 +12,8 @@ from ui.theme import COLORS
 
 
 class MarkdownPreview(ctk.CTkFrame):
-    """可编辑的Markdown预览组件 - 支持双向同步"""
-    def __init__(self, master, on_content_change=None, app=None, **kwargs):
+    """可编辑的Markdown预览组件 - 支持双向同步和滚动同步"""
+    def __init__(self, master, on_content_change=None, app=None, on_scroll=None, **kwargs):
         super().__init__(master, fg_color=COLORS['bg_card'], corner_radius=12, **kwargs)
 
         # 预览缩放（仅影响预览区字体/样式）
@@ -34,6 +34,10 @@ class MarkdownPreview(ctk.CTkFrame):
         
         # 内容变化回调
         self.on_content_change = on_content_change
+        
+        # 滚动同步回调
+        self.on_scroll = on_scroll
+        self._scroll_updating = False
 
         # App 引用：用于“复制到 Word”
         self.app = app
@@ -545,7 +549,7 @@ class MarkdownPreview(ctk.CTkFrame):
         self._updating = updating
     
     def _setup_tags(self):
-        """配置文本标签样式 - 模拟Word中的样式"""
+        """配置文本标签样式 - 模拟Word中的样式，更接近真实排版"""
         def sz(key: str) -> int:
             try:
                 base = int(self._base_sizes.get(key, 16))
@@ -584,22 +588,51 @@ class MarkdownPreview(ctk.CTkFrame):
         except Exception:
             pass
 
-        # 标题样式 - 相比正文放大一到两个级别，比例更接近论文
-        self.text.tag_configure('h1', font=('黑体', sz('h1'), 'bold'), justify='center', spacing1=28, spacing3=16)
-        self.text.tag_configure('h2', font=('黑体', sz('h2'), 'bold'), justify='center', spacing1=22, spacing3=14)
-        self.text.tag_configure('h3', font=('黑体', sz('h3'), 'bold'), spacing1=16, spacing3=12)
-        self.text.tag_configure('h4', font=('黑体', sz('h4'), 'bold'), spacing1=14, spacing3=10)
+        # 标题样式 - 与 Word 导出保持一致
+        # 一级标题：黑体，22pt，居中，段前24pt，段后18pt
+        self.text.tag_configure('h1', 
+            font=('黑体', sz('h1'), 'bold'), 
+            justify='center', 
+            spacing1=24,  # 段前
+            spacing3=18   # 段后
+        )
+        # 二级标题：黑体，16pt，居中，段前18pt，段后12pt
+        self.text.tag_configure('h2', 
+            font=('黑体', sz('h2'), 'bold'), 
+            justify='center', 
+            spacing1=18, 
+            spacing3=12
+        )
+        # 三级标题：黑体，15pt，左对齐，段前13pt，段后10pt
+        self.text.tag_configure('h3', 
+            font=('黑体', sz('h3'), 'bold'), 
+            lmargin1=0,  # 与 Word 一致，无额外左边距
+            lmargin2=0,
+            spacing1=13, 
+            spacing3=10
+        )
+        # 四级标题：黑体，14pt，左对齐，段前10pt，段后6pt
+        self.text.tag_configure('h4', 
+            font=('黑体', sz('h4'), 'bold'), 
+            lmargin1=0,  # 与 Word 一致，无额外左边距
+            lmargin2=0,
+            spacing1=10, 
+            spacing3=6
+        )
         
-        # 正文样式：统一控制左右页边距和段前段后间距，模拟 LaTeX/Word 正文
-        # 首行缩进2字符（16pt字号 × 2 ≈ 32像素）
+        # 正文样式：与 Word 导出保持一致
+        # 宋体，12pt（预览中用16px），首行缩进2字符，1.5倍行距，段后6pt
+        body_font_size = sz('body')
+        first_indent = int(body_font_size * 2)  # 首行缩进2字符（约32px）
         self.text.tag_configure(
             'body',
-            font=('宋体', sz('body')),
-            lmargin1=margin(112, 0.22),  # 左边距（首行）= 80 + 32（首行缩进）
-            lmargin2=margin(80, 0.18),   # 左边距（后续行）
-            rmargin=margin(80, 0.18),    # 右边距
-            spacing1=4,    # 段前
-            spacing3=4,    # 段后
+            font=('宋体', body_font_size),
+            lmargin1=first_indent,  # 首行缩进
+            lmargin2=0,             # 后续行无额外边距
+            rmargin=0,              # 右边距由 Text widget 的 padx 控制
+            spacing1=0,    # 段前
+            spacing3=6,    # 段后
+            spacing2=int(body_font_size * 0.5),  # 行间距（模拟1.5倍行距）
         )
         
         # 粗体、斜体（保持与正文字号一致）
@@ -607,34 +640,63 @@ class MarkdownPreview(ctk.CTkFrame):
         self.text.tag_configure('italic', font=('宋体', sz('body'), 'italic'))
         self.text.tag_configure('bold_italic', font=('宋体', sz('body'), 'bold italic'))
         
-        # 代码（白色底色）
-        self.text.tag_configure('code', font=('Consolas', sz('code')), background='#F5F5F5')
-        self.text.tag_configure('code_block', font=('Consolas', sz('code')), background='#FAFAFA', foreground='#1F2937')
+        # 代码（Consolas，10pt，浅灰背景）
+        self.text.tag_configure('code', 
+            font=('Consolas', sz('code')), 
+            background='#F5F5F5',
+            foreground='#1F2937'
+        )
+        code_indent = int(20 * (self._scale or 1.0))
+        self.text.tag_configure('code_block', 
+            font=('Consolas', sz('code')), 
+            background='#FAFAFA', 
+            foreground='#1F2937',
+            lmargin1=code_indent,
+            lmargin2=code_indent,
+            spacing1=6,
+            spacing3=6
+        )
         
         # 公式：优先使用 Cambria Math，回退到其他数学字体
         math_font = self._get_math_font()
         self.text.tag_configure('math', font=(math_font, sz('math')), foreground='#1a1a2e')
-        self.text.tag_configure('math_block', font=(math_font, sz('math_block')), foreground='#1a1a2e', justify='center', spacing1=8, spacing3=8)
+        self.text.tag_configure('math_block', 
+            font=(math_font, sz('math_block')), 
+            foreground='#1a1a2e', 
+            justify='center', 
+            spacing1=8, 
+            spacing3=8
+        )
         
-        # 链接
+        # 链接（蓝色，下划线）
         self.text.tag_configure('link', foreground='#0000FF', underline=True)
         
         # 删除线
         self.text.tag_configure('strikethrough', overstrike=True)
         
         # 上标和下标
-        self.text.tag_configure('superscript', font=('宋体', sz('supsub')), offset=6)  # 上标：更小字体，向上偏移
-        self.text.tag_configure('subscript', font=('宋体', sz('supsub')), offset=-3)  # 下标：更小字体，向下偏移
+        self.text.tag_configure('superscript', font=('宋体', sz('supsub')), offset=6)
+        self.text.tag_configure('subscript', font=('宋体', sz('supsub')), offset=-3)
         
-        # 引用
-        self.text.tag_configure('quote', font=('宋体', sz('quote'), 'italic'), foreground='#6B7280', lmargin1=margin(30, 0.12), lmargin2=margin(30, 0.12))
+        # 引用（Times New Roman，斜体，左右缩进）
+        quote_indent = int(36 * (self._scale or 1.0))
+        self.text.tag_configure('quote', 
+            font=('Times New Roman', sz('quote'), 'italic'), 
+            foreground='#6B7280', 
+            lmargin1=quote_indent, 
+            lmargin2=quote_indent,
+            rmargin=quote_indent,
+            spacing1=6,
+            spacing3=6
+        )
         
-        # 列表：在正文基础上增加缩进
+        # 列表：与 Word 保持一致的缩进（约1.27cm ≈ 36px）
+        list_indent = int(36 * (self._scale or 1.0))
         self.text.tag_configure(
             'list_item',
             font=('宋体', sz('list_item')),
-            lmargin1=margin(36, 0.12),
-            lmargin2=margin(60, 0.16),
+            lmargin1=list_indent,
+            lmargin2=list_indent + int(16 * (self._scale or 1.0)),
             spacing1=2,
             spacing3=2,
         )
@@ -656,12 +718,17 @@ class MarkdownPreview(ctk.CTkFrame):
         self.text.tag_raise('subscript')
 
     def set_scale(self, scale: float):
-        """设置预览缩放比例（仅预览区）。"""
+        """设置预览缩放比例（仅预览区）。
+        
+        Args:
+            scale: 缩放比例 (0.5 - 1.5)
+        """
         try:
             scale = float(scale)
         except Exception:
             scale = 1.0
-        scale = min(1.35, max(0.9, scale))
+        # 扩大缩放范围：50% - 150%
+        scale = min(1.5, max(0.5, scale))
         if abs(scale - float(getattr(self, '_scale', 1.0))) < 0.01:
             return
         self._scale = scale
@@ -828,7 +895,10 @@ class MarkdownPreview(ctk.CTkFrame):
             ax.axis('off')
 
             # 行内公式略小，块级公式略大，以匹配正文 16pt 的视觉大小
-            render_fontsize = 14 if is_inline else 18
+            # 应用缩放比例
+            scale = getattr(self, '_scale', 1.0)
+            base_fontsize = 12 if is_inline else 14  # 与正文 16pt 匹配
+            render_fontsize = int(base_fontsize * scale)
 
             formula = (latex or '').strip()
             # 兼容 $...$/$$...$$ 包裹：先剥离，避免变成 $$...$$ 导致解析失败
@@ -868,7 +938,7 @@ class MarkdownPreview(ctk.CTkFrame):
                 format='png',
                 bbox_inches='tight',
                 pad_inches=0.02,
-                dpi=120,
+                dpi=120,  # 固定 DPI，缩放只通过 fontsize 控制
                 transparent=True,
             )
             plt.close(fig)
@@ -915,61 +985,80 @@ class MarkdownPreview(ctk.CTkFrame):
         self.text.insert('end', '\n')
     
     def _insert_table(self, table_text: str):
-        """插入表格 - 在预览中渲染为网格表，支持格式化内容"""
+        """插入表格 - 在预览中渲染为网格表，支持格式化内容，居中显示"""
         headers, rows, alignments = parse_table(table_text)
         if not headers:
             self.text.insert('end', table_text + '\n\n', ('body',))
             return
 
-        # 创建容器Frame用于居中
-        container = tk.Frame(self.text, bg=self.text.cget('bg'))
+        # 插入换行和居中标记
+        self.text.insert('end', '\n')
+        
+        # 记录表格开始位置
+        table_start = self.text.index('end-1c')
+        
+        # 创建表格容器 Frame，使用 place 实现真正居中
+        table_container = tk.Frame(self.text, bg=self.text.cget('bg'))
         
         # 创建表格 Frame
-        table_frame = tk.Frame(container, bg='#FFFFFF', bd=0)
-        table_frame.pack(anchor='center')
+        table_frame = tk.Frame(table_container, bg='#E5E7EB', bd=0)
+        table_frame.pack(anchor='center', padx=2, pady=2)
 
         all_rows = [headers] + rows
         num_cols = len(headers)
+        
+        # 计算每列最大宽度
+        col_widths = []
+        for c in range(num_cols):
+            max_width = 8  # 最小宽度
+            for row in all_rows:
+                if c < len(row):
+                    cell_len = len(row[c])
+                    max_width = max(max_width, min(cell_len + 2, 20))  # 限制最大宽度
+            col_widths.append(max_width)
 
         for r, row in enumerate(all_rows):
             for c in range(num_cols):
                 cell_text = row[c] if c < len(row) else ''
                 is_header = (r == 0)
                 
-                # 使用 Text 组件来支持格式化内容
-                cell = tk.Text(
+                # 获取对齐方式
+                align = 'center'
+                if c < len(alignments):
+                    if alignments[c] == 'left':
+                        align = 'w'
+                    elif alignments[c] == 'right':
+                        align = 'e'
+                    else:
+                        align = 'center'
+                
+                # 使用 Label 组件简化表格单元格
+                cell = tk.Label(
                     table_frame,
-                    font=('黑体' if is_header else '宋体', 14),
+                    text=cell_text,
+                    font=('黑体' if is_header else '宋体', int(12 * getattr(self, '_scale', 1.0)), 'bold' if is_header else 'normal'),
                     fg='#1E293B',
                     bg='#F1F5F9' if is_header else '#FFFFFF',
                     bd=1,
                     relief='solid',
-                    padx=10,
+                    padx=int(8 * getattr(self, '_scale', 1.0)),
                     pady=4,
-                    width=12,
-                    height=1,
-                    wrap='none',
-                    cursor='arrow',
+                    width=int(col_widths[c] * getattr(self, '_scale', 1.0)),
+                    anchor=align if align != 'center' else 'center',
                 )
-                
-                # 配置标签样式
-                cell.tag_configure('bold', font=('黑体' if is_header else '宋体', 14, 'bold'))
-                cell.tag_configure('italic', font=('黑体' if is_header else '宋体', 14, 'italic'))
-                cell.tag_configure('bold_italic', font=('黑体' if is_header else '宋体', 14, 'bold italic'))
-                cell.tag_configure('superscript', font=('宋体', 10), offset=4)
-                cell.tag_configure('subscript', font=('宋体', 10), offset=-3)
-                cell.tag_configure('strikethrough', overstrike=True)
-                cell.tag_configure('code', font=('Consolas', 12), background='#F0F0F0')
-                
-                # 解析并插入格式化内容
-                self._insert_cell_content(cell, cell_text, is_header)
-                
-                cell.config(state='disabled')  # 禁用编辑
-                cell.grid(row=r, column=c, sticky='nsew')
+                cell.grid(row=r, column=c, sticky='nsew', padx=0, pady=0)
 
-        # 插入到 Text 中居中显示
-        self.text.insert('end', '\n')
-        self.text.window_create('end', window=container)
+        # 配置列权重使表格均匀分布
+        for c in range(num_cols):
+            table_frame.grid_columnconfigure(c, weight=1)
+
+        # 插入表格到 Text 中
+        self.text.window_create('end', window=table_container)
+        
+        # 应用居中标签
+        table_end = self.text.index('end-1c')
+        self.text.tag_add('table_block', table_start, table_end)
+        
         self.text.insert('end', '\n\n')
 
         # 插入隐藏的表格 Markdown，确保回写 Markdown 时不会丢表格
@@ -979,16 +1068,6 @@ class MarkdownPreview(ctk.CTkFrame):
                 self.text.insert('end', raw + '\n\n', ('math_token',))
         except Exception:
             pass
-        
-        # 设置容器宽度以实现居中（延迟执行以获取实际宽度）
-        def center_table():
-            try:
-                text_width = self.text.winfo_width()
-                if text_width > 100:
-                    container.configure(width=text_width - 40)
-            except Exception:
-                pass
-        self.text.after(10, center_table)
     
     def _insert_cell_content(self, cell: tk.Text, text: str, is_header: bool = False):
         """在表格单元格中插入格式化内容"""
@@ -1068,11 +1147,11 @@ class MarkdownPreview(ctk.CTkFrame):
             prev_level = item_level
             
             # 计算缩进
-            indent = '  ' + '    ' * item_level
+            indent = '    ' * item_level
             
             if is_task:
                 # 避免 ☑/☐ 在部分字体下显示为方块导致“乱码/错位”
-                checkbox = '[x]' if checked else '[ ]'
+                checkbox = '☑' if checked else '☐'
                 self.text.insert('end', f'{indent}{checkbox} ', ('list_item',))
                 self._insert_inline_elements(item_text, extra_tags=['list_item'])
             else:
@@ -1081,7 +1160,7 @@ class MarkdownPreview(ctk.CTkFrame):
                     self.text.insert('end', f'{indent}{number} ', ('list_item',))
                 else:
                     # 避免 •/◦ 等符号在部分字体下显示异常
-                    self.text.insert('end', f'{indent}- ', ('list_item',))
+                    self.text.insert('end', f'{indent}• ', ('list_item',))
                 self._insert_inline_elements(item_text, extra_tags=['list_item'])
             
             self.text.insert('end', '\n')
@@ -1090,3 +1169,46 @@ class MarkdownPreview(ctk.CTkFrame):
     def _insert_image(self, alt: str, url: str):
         """插入图片占位"""
         self.text.insert('end', f'🖼️ [{alt}]\n\n')
+
+    # ==================== 滚动同步方法 ====================
+    
+    def _on_scrollbar(self, *args):
+        """滚动条事件处理"""
+        self.text.yview(*args)
+    
+    def _on_text_scroll(self, first, last):
+        """文本滚动事件处理，同步到编辑器"""
+        # 更新滚动条
+        self.scrollbar.set(first, last)
+        
+        # 触发滚动同步回调
+        if hasattr(self, 'on_scroll') and self.on_scroll and not getattr(self, '_scroll_updating', False):
+            try:
+                self.on_scroll(float(first))
+            except Exception:
+                pass
+    
+    def sync_scroll_to(self, position: float):
+        """同步滚动到指定位置
+        
+        Args:
+            position: 滚动位置 (0.0 - 1.0)
+        """
+        if getattr(self, '_scroll_updating', False):
+            return
+        
+        self._scroll_updating = True
+        try:
+            self.text.yview_moveto(position)
+        except Exception:
+            pass
+        finally:
+            self._scroll_updating = False
+    
+    def set_sync_scroll_enabled(self, enabled: bool):
+        """设置是否启用同步滚动
+        
+        Args:
+            enabled: 是否启用
+        """
+        self._sync_scroll_enabled = enabled

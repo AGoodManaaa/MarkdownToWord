@@ -27,6 +27,11 @@ from ui.features import (
     ThemeFeature,
     PreviewSyncFeature,
     WindowGeometryFeature,
+    PDFExportFeature,
+    PreviewZoomFeature,
+    EditorZoomFeature,
+    TabManagerFeature,
+    StatisticsDetailFeature,
 )
 from ui.export_helpers import (
     export_to_word_for_app,
@@ -109,6 +114,11 @@ class App(ctk.CTk):
 
         self.help_dialog_feature = HelpDialogFeature(self)
         self.auto_save_feature = AutoSaveFeature(self)
+        self.pdf_export_feature = PDFExportFeature(self)
+        self.preview_zoom_feature = PreviewZoomFeature(self)
+        self.editor_zoom_feature = EditorZoomFeature(self)
+        self.tab_manager = TabManagerFeature(self)
+        self.statistics_detail = StatisticsDetailFeature(self)
         
         # 内容修改标记
         self._content_modified = False
@@ -125,7 +135,7 @@ class App(ctk.CTk):
         # 绑定快捷键
         self.bind('<Control-o>', lambda e: self.open_file())
         self.bind('<Control-s>', lambda e: self.save_file())  # 保存源文件
-        self.bind('<Control-Shift-s>', lambda e: self.export_to_word())  # 导出Word
+        self.bind('<Control-Shift-s>', lambda e: self.export_to_word())  # 导出（打开导出选项）
         self.bind('<Control-Shift-f>', lambda e: self.format_markdown())
         self.bind('<Control-Shift-c>', lambda e: self.copy_to_clipboard())
         self.bind('<Control-j>', lambda e: self.show_export_history())
@@ -155,6 +165,12 @@ class App(ctk.CTk):
         
         # 启动自动保存
         self.auto_save_feature.start()
+        
+        # 恢复预览缩放比例
+        self.preview_zoom_feature.restore_scale()
+        
+        # 恢复编辑区缩放比例
+        self.editor_zoom_feature.restore_scale()
     
     def _create_header(self):
         """创建顶部标题栏"""
@@ -187,7 +203,7 @@ class App(ctk.CTk):
             ("🔍", "搜索", self.show_search_dialog, "Ctrl+F"),
             ("👁", "预览", self.toggle_preview, "Ctrl+P"),
             ("📤", "导出", self.export_to_word, "Ctrl+Shift+S"),
-            ("🕘", "历史", self.show_export_history, "Ctrl+J"),
+            ("�", "历出史", self.show_export_history, "Ctrl+J"),
         ]
         
         self.preview_btn = None
@@ -334,9 +350,17 @@ class App(ctk.CTk):
         # 侧边栏内容
         self._create_sidebar_content()
         
-        # 右侧主编辑区
-        self.main_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
-        self.main_frame.pack(side="left", fill="both", expand=True)
+        # 右侧主编辑区（包含标签栏和编辑/预览区）
+        self.right_container = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.right_container.pack(side="left", fill="both", expand=True)
+        
+        # 标签栏
+        self.tab_bar = self.tab_manager.create_tab_bar(self.right_container)
+        self.tab_bar.pack(fill="x", pady=(0, 4))
+        
+        # 编辑/预览区
+        self.main_frame = ctk.CTkFrame(self.right_container, fg_color="transparent")
+        self.main_frame.pack(fill="both", expand=True)
         
         # 配置列权重：左侧输入略宽，右侧预览略窄
         self.main_frame.grid_columnconfigure(0, weight=3)
@@ -381,6 +405,10 @@ class App(ctk.CTk):
         toolbar = ctk.CTkFrame(self.input_card, fg_color="transparent", height=26)
         toolbar.pack(fill="x", padx=6, pady=(6, 0))
         toolbar.pack_propagate(False)  # 保持固定高度
+        
+        # 编辑区缩放控件（放在工具栏右侧）
+        editor_zoom_controls = self.editor_zoom_feature.create_controls(toolbar)
+        editor_zoom_controls.pack(side="right", padx=(4, 0))
         
         # 快捷插入按钮 - 分组显示
         groups = [
@@ -451,8 +479,21 @@ class App(ctk.CTk):
         self.preview_card = ModernCard(parent, title="👁️ 实时预览")
         self.preview_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
         
-        # 预览组件
-        self.preview = MarkdownPreview(self.preview_card, on_content_change=self._on_preview_change, app=self)
+        # 顶部缩放控件
+        zoom_frame = ctk.CTkFrame(self.preview_card, fg_color="transparent", height=30)
+        zoom_frame.pack(fill="x", padx=10, pady=(4, 0))
+        
+        # 缩放控件放在右侧
+        zoom_controls = self.preview_zoom_feature.create_controls(zoom_frame)
+        zoom_controls.pack(side="right")
+        
+        # 预览组件（添加滚动同步回调）
+        self.preview = MarkdownPreview(
+            self.preview_card, 
+            on_content_change=self._on_preview_change, 
+            app=self,
+            on_scroll=self._on_preview_scroll
+        )
         self.preview.pack(fill="both", expand=True, padx=10, pady=(0, 8))
         
         # 底部操作按钮
@@ -546,6 +587,9 @@ class App(ctk.CTk):
         self.status_label = self.status_bar_feature.status_label
         self.word_count_label = self.status_bar_feature.word_count_label
         self.cursor_pos_label = self.status_bar_feature.cursor_pos_label
+        
+        # 绑定状态栏点击事件显示详细统计
+        self.statistics_detail.bind_status_bar_click()
     
     def _insert_example(self):
         """插入示例Markdown"""
@@ -564,6 +608,10 @@ class App(ctk.CTk):
     
     def _on_preview_change(self, markdown_text: str):
         self.preview_sync.on_preview_change(markdown_text)
+    
+    def _on_preview_scroll(self, position: float):
+        """预览区滚动时同步编辑器"""
+        self.preview_sync.on_preview_scroll(position)
 
     def open_file(self):
         self.file_ops.open_file()
@@ -571,6 +619,10 @@ class App(ctk.CTk):
     def export_to_word(self):
         """导出为Word文档（委托给导出 helper）。"""
         export_to_word_for_app(self)
+
+    def export_to_pdf(self):
+        """导出为PDF文档。"""
+        self.pdf_export_feature.export_to_pdf()
 
     def format_markdown(self):
         try:
@@ -719,7 +771,7 @@ class App(ctk.CTk):
         self.sidebar_visible = not self.sidebar_visible
         
         if self.sidebar_visible:
-            self.sidebar.pack(side="left", fill="y", padx=(0, 10), before=self.main_container.winfo_children()[1])
+            self.sidebar.pack(side="left", fill="y", padx=(0, 10), before=self.right_container)
         else:
             self.sidebar.pack_forget()
         

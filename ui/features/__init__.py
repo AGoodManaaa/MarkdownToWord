@@ -12,3 +12,8 @@ from .file_ops import FileOpsFeature
 from .theme_feature import ThemeFeature
 from .preview_sync import PreviewSyncFeature
 from .window_geometry import WindowGeometryFeature
+from .pdf_export import PDFExportFeature
+from .preview_zoom import PreviewZoomFeature
+from .editor_zoom import EditorZoomFeature
+from .tab_manager import TabManagerFeature, TabData
+from .statistics_detail import StatisticsDetailFeature, DocumentStatistics

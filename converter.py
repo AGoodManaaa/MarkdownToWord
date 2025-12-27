@@ -895,6 +895,15 @@ class MarkdownToWordConverter:
         # 使用行内元素解析（支持公式等）
         self._add_inline_content(para, text)
 
+        # 方案B：使用 Word 内置标题样式时，某些 run（加粗/斜体/超链接等直接格式）
+        # 可能会丢失 eastAsia 字体继承，导致中文标题显示为默认字体。
+        # 这里为标题段落的每个 run 补齐中文字体，避免标题字体“跳变”。
+        if self._use_word_styles():
+            try:
+                self._ensure_heading_paragraph_fonts(para)
+            except Exception:
+                pass
+
         # 书签（用于引用）+ 节编号标签
         if anchor_id:
             try:
@@ -909,6 +918,36 @@ class MarkdownToWordConverter:
             for run in para.runs:
                 self._set_heading_font(run, font_size)
     
+    def _ensure_heading_paragraph_fonts(self, paragraph) -> None:
+        """方案B：确保标题段落内所有 run（含超链接等）都补齐中文字体。
+
+        - Word 中超链接通常是 w:hyperlink/w:r，不一定出现在 paragraph.runs 中。
+        - 标题含引号等字符时，Word/库可能拆分为多个 run。
+        - 这里只补齐 eastAsia，避免覆盖字号/加粗等由样式控制的属性。
+        """
+        try:
+            heading_cn = self.export_style.get('heading_cn', FONTS['heading_cn'])
+        except Exception:
+            heading_cn = FONTS['heading_cn']
+
+        try:
+            p = paragraph._p
+            # 遍历段落下所有 w:r（包含 hyperlink 内部的 run）
+            runs = p.xpath('.//w:r')
+        except Exception:
+            runs = []
+
+        for r in runs:
+            try:
+                rPr = r.get_or_add_rPr()
+                rFonts = rPr.find(qn('w:rFonts'))
+                if rFonts is None:
+                    rFonts = OxmlElement('w:rFonts')
+                    rPr.insert(0, rFonts)
+                rFonts.set(qn('w:eastAsia'), heading_cn)
+            except Exception:
+                pass
+
     def _set_heading_font(self, run, font_size) -> None:
         """设置标题字体 - 中文黑体，英文Times New Roman，加粗"""
         if self._use_word_styles():

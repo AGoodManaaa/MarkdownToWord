@@ -214,6 +214,30 @@ def show_export_options_for_app(app, content: str) -> None:
             pass
         do_export_for_app(app, content, style_var.get(), page_var.get())
 
+    def do_export_pdf() -> None:
+        dialog.destroy()
+        try:
+            if hasattr(app, 'config') and isinstance(app.config, dict):
+                app.config['last_export_style'] = style_var.get()
+                app.config['last_export_page_size'] = page_var.get()
+                app.config['preflight_check_remote_images'] = bool(remote_var.get())
+                app.config['export_toc_enabled'] = bool(toc_var.get())
+                app.config['export_update_fields_on_open'] = bool(update_fields_var.get())
+                app.config['export_auto_format_markdown'] = bool(auto_format_var.get())
+                try:
+                    from ui.theme import save_config
+                    save_config(app.config)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # 调用 PDF 导出功能
+        try:
+            if hasattr(app, 'pdf_export_feature'):
+                app.pdf_export_feature.export_to_pdf()
+        except Exception:
+            pass
+
     def open_style_settings() -> None:
         try:
             if hasattr(app, 'open_export_style_settings'):
@@ -223,10 +247,18 @@ def show_export_options_for_app(app, content: str) -> None:
 
     ctk.CTkButton(
         btn_frame,
-        text="📤 导出",
+        text="📤 导出 Word",
         command=do_export,
         fg_color=COLORS["primary"],
-        width=120,
+        width=110,
+    ).pack(side="right", padx=5)
+
+    ctk.CTkButton(
+        btn_frame,
+        text="📄 导出 PDF",
+        command=do_export_pdf,
+        fg_color=COLORS["success"],
+        width=100,
     ).pack(side="right", padx=5)
 
     ctk.CTkButton(
