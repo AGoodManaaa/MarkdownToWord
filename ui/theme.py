@@ -38,27 +38,28 @@ COLORS_LIGHT = {
 }
 
 # 暗色主题颜色
+# 暗色主题颜色 (Premium Dark)
 COLORS_DARK = {
-    'primary': '#818CF8',
-    'primary_hover': '#6366F1',
-    'secondary': '#FB7185',
-    'success': '#34D399',
-    'warning': '#FBBF24',
-    'danger': '#F87171',
-    'bg_light': '#0B1220',
-    'bg_card': '#0F172A',
-    'bg_sidebar': '#0B1220',
-    'text_primary': '#E2E8F0',
-    'text_secondary': '#94A3B8',
-    'text_muted': '#64748B',
-    'border': '#1F2A44',
-    'border_focus': '#818CF8',
-    'line_number': '#64748B',
-    'line_number_bg': '#0B1220',
-    'highlight': '#1E2A5A',
-    'shadow': '#020617',
-    'editor_bg': '#0B1220',
-    'preview_bg': '#0F172A',
+    'primary': '#60A5FA',       # Blue 400 - 更明亮现代的主色
+    'primary_hover': '#3B82F6', # Blue 500
+    'secondary': '#F472B6',     # Pink 400
+    'success': '#34D399',       # Emerald 400
+    'warning': '#FBBF24',       # Amber 400
+    'danger': '#F87171',        # Red 400
+    'bg_light': '#18181B',      # Zinc 950 - 深邃背景
+    'bg_card': '#27272A',       # Zinc 800 - 卡片背景
+    'bg_sidebar': '#27272A',    # Zinc 800 - 侧边栏
+    'text_primary': '#F4F4F5',  # Zinc 100 - 主要文字
+    'text_secondary': '#A1A1AA',# Zinc 400 - 次要文字
+    'text_muted': '#71717A',    # Zinc 500 - 弱化文字
+    'border': '#3F3F46',        # Zinc 700 - 边框
+    'border_focus': '#60A5FA',  # Blue 400
+    'line_number': '#71717A',
+    'line_number_bg': '#18181B',
+    'highlight': '#1E3A8A',     # Blue 900
+    'shadow': '#000000',
+    'editor_bg': '#18181B',
+    'preview_bg': '#27272A',
 }
 
 # 当前主题颜色（通过清空+更新的方式在原地修改，供其他模块共享）

@@ -21,13 +21,40 @@ except ImportError:
 
 
 @dataclass
+@dataclass
 class AIConfig:
     """AI 配置"""
+    provider: str = "openai"  # openai, deepseek, siliconflow
     api_key: str = ""
     api_base: str = "https://api.openai.com/v1"
     model: str = "gpt-3.5-turbo"
     temperature: float = 0.7
     max_tokens: int = 2000
+
+# 服务商预设配置
+PROVIDERS = {
+    "openai": {
+        "name": "OpenAI",
+        "api_base": "https://api.openai.com/v1",
+        "models": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4o", "gpt-4o-mini"]
+    },
+    "deepseek": {
+        "name": "DeepSeek (深度求索)",
+        "api_base": "https://api.deepseek.com",
+        "models": ["deepseek-chat", "deepseek-coder"]
+    },
+    "siliconflow": {
+        "name": "SiliconFlow (硅基流动)",
+        "api_base": "https://api.siliconflow.cn/v1",
+        "models": [
+            "deepseek-ai/DeepSeek-V2-Chat",
+            "deepseek-ai/DeepSeek-V2.5",
+            "Qwen/Qwen2.5-72B-Instruct",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "meta-llama/Meta-Llama-3.1-70B-Instruct"
+        ]
+    }
+}
 
 
 class AIAssistantFeature:
@@ -70,6 +97,7 @@ class AIAssistantFeature:
         try:
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 data = {
+                    "provider": getattr(self.config, "provider", "openai"),
                     "api_key": self.config.api_key,
                     "api_base": self.config.api_base,
                     "model": self.config.model,
@@ -110,16 +138,41 @@ class AIAssistantFeature:
         config_frame = ctk.CTkFrame(main_frame, fg_color=("gray90", "gray20"))
         config_frame.pack(fill="x", pady=(0, 10))
         
-        ctk.CTkLabel(config_frame, text="API Key:").pack(side="left", padx=10, pady=8)
-        self.api_key_entry = ctk.CTkEntry(config_frame, width=280, show="*")
+        # 顶部：服务商选择 + 简易配置
+        provider_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
+        provider_frame.pack(side="left", padx=5)
+        
+        ctk.CTkLabel(provider_frame, text="服务商:").pack(side="left")
+        self.provider_var = ctk.StringVar(value=getattr(self.config, "provider", "openai"))
+        
+        provider_names = [p["name"] for p in PROVIDERS.values()]
+        # 映射显示名到 key
+        self.provider_map = {v["name"]: k for k, v in PROVIDERS.items()}
+        current_provider_name = PROVIDERS.get(self.provider_var.get(), PROVIDERS["openai"])["name"]
+        
+        self.provider_menu = ctk.CTkOptionMenu(
+            provider_frame, 
+            values=provider_names, 
+            width=140,
+            command=self._on_provider_change
+        )
+        self.provider_menu.pack(side="left", padx=5)
+        self.provider_menu.set(current_provider_name)
+
+        ctk.CTkLabel(config_frame, text="API Key:").pack(side="left", padx=5)
+        self.api_key_entry = ctk.CTkEntry(config_frame, width=200, show="*")
         self.api_key_entry.pack(side="left", padx=5)
         if self.config.api_key:
             self.api_key_entry.insert(0, self.config.api_key)
         
-        ctk.CTkLabel(config_frame, text="模型:").pack(side="left", padx=(15, 5))
+        ctk.CTkLabel(config_frame, text="模型:").pack(side="left", padx=5)
         self.model_var = ctk.StringVar(value=self.config.model)
-        models = ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4o", "gpt-4o-mini"]
-        ctk.CTkOptionMenu(config_frame, values=models, variable=self.model_var, width=120).pack(side="left")
+        
+        # 获取当前服务商的模型列表
+        current_models = PROVIDERS.get(self.provider_var.get(), PROVIDERS["openai"])["models"]
+        
+        self.model_menu = ctk.CTkComboBox(config_frame, values=current_models, variable=self.model_var, width=160)
+        self.model_menu.pack(side="left")
         
         ctk.CTkButton(config_frame, text="⚙️", width=35, command=self._show_settings).pack(side="right", padx=10)
         
@@ -238,6 +291,27 @@ class AIAssistantFeature:
         
         ctk.CTkButton(frame, text="保存", command=save).pack(pady=15)
     
+    def _on_provider_change(self, provider_name: str):
+        """服务商切换处理"""
+        provider_key = self.provider_map.get(provider_name)
+        if not provider_key:
+            return
+            
+        # 更新配置
+        self.config.provider = provider_key
+        provider_data = PROVIDERS[provider_key]
+        self.config.api_base = provider_data["api_base"]
+        
+        # 更新模型列表
+        models = provider_data["models"]
+        self.model_menu.configure(values=models)
+        self.model_var.set(models[0])
+        self.config.model = models[0]
+        
+        # 提示更新 API Key
+        self.api_key_entry.delete(0, 9999) # 使用 9999 而不是 END 因为 END 在这里可能未导入
+        # messagebox.showinfo("提示", f"已切换到 {provider_name}。\n请确保输入正确的 API Key。")
+
     def _execute(self, prompt_key: str):
         """执行预设提示"""
         text = self.input_text.get("1.0", "end-1c").strip()
