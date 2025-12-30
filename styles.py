@@ -130,6 +130,45 @@ def setup_document_styles(doc: Document, style: str = "standard", page_size: str
     
     # 设置页面边距和大小
     _setup_page_margins(doc, page_size)
+    
+    # 创建脚注相关样式
+    _setup_footnote_styles(doc, style_config)
+
+
+def _setup_footnote_styles(doc: Document, style_config: dict = None) -> None:
+    """创建并配置和脚注相关的样式"""
+    if style_config is None:
+        style_config = STYLE_CONFIGS['standard']
+    styles = doc.styles
+    
+    # Footnote Text - 脚注文本样式
+    if 'Footnote Text' not in [s.name for s in styles]:
+        footnote_text = styles.add_style('Footnote Text', WD_STYLE_TYPE.PARAGRAPH)
+    else:
+        footnote_text = styles['Footnote Text']
+    
+    footnote_text.font.name = style_config.get('body_en', FONTS['body_en'])
+    footnote_text.font.size = _pt(style_config.get('footnote_size_pt'), FONT_SIZES['wu_hao'])
+    footnote_text.paragraph_format.line_spacing = 1.0
+    footnote_text.paragraph_format.space_after = Pt(0)
+    
+    # 为 Footnote Text 设置中文字体
+    r = footnote_text.element.get_or_add_rPr()
+    rFonts = r.find(qn('w:rFonts'))
+    if rFonts is None:
+        rFonts = OxmlElement('w:rFonts')
+        r.insert(0, rFonts)
+    rFonts.set(qn('w:eastAsia'), style_config.get('body_cn', FONTS['body_cn']))
+    
+    # Footnote Reference - 脚注引用样式（字符样式）
+    if 'Footnote Reference' not in [s.name for s in styles]:
+        footnote_ref = styles.add_style('Footnote Reference', WD_STYLE_TYPE.CHARACTER)
+    else:
+        footnote_ref = styles['Footnote Reference']
+    
+    footnote_ref.font.superscript = True
+    # 引用通常很小，但在 Word 中它会自动缩小，这里保证它有正确的字体背景
+    footnote_ref.font.name = style_config.get('body_en', FONTS['body_en'])
 
 
 def _set_default_font(doc: Document, style_config: dict = None) -> None:

@@ -44,7 +44,7 @@ def show_export_options_for_app(app, content: str) -> None:
         attach_window_geometry(app, dialog, 'export_options')
     except Exception:
         pass
-    w, h = 440, 560
+    w, h = 600, 750
     dialog.geometry(f"{w}x{h}")
     try:
         dialog.minsize(420, 520)
@@ -105,6 +105,33 @@ def show_export_options_for_app(app, content: str) -> None:
             value=value,
             font=ctk.CTkFont(size=14),
         ).pack(anchor="w", pady=5, padx=10)
+
+    # 模板选择
+    template_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+    template_frame.pack(fill="x", padx=30, pady=10)
+
+    ctk.CTkLabel(
+        template_frame,
+        text="Word 模板：",
+        font=ctk.CTkFont(size=16),
+    ).pack(anchor="w")
+
+    templates = ["默认 (空白)"]
+    if hasattr(app, 'template_selector'):
+        templates = app.template_selector.get_templates()
+
+    selected_template = ctk.StringVar(value="默认 (空白)")
+    template_combo = ctk.CTkComboBox(template_frame, values=templates, variable=selected_template, width=280)
+    template_combo.pack(pady=5, padx=10, anchor="w", side="left")
+
+    def import_template_cmd():
+        if hasattr(app, 'template_selector'):
+            if app.template_selector.import_template():
+                new_templates = app.template_selector.get_templates()
+                template_combo.configure(values=new_templates)
+                template_combo.set(new_templates[-1])
+
+    ctk.CTkButton(template_frame, text="导入", width=60, command=import_template_cmd).pack(pady=5, padx=5, anchor="w", side="left")
 
     # 页面设置
     page_frame = ctk.CTkFrame(dialog, fg_color="transparent")
@@ -212,7 +239,13 @@ def show_export_options_for_app(app, content: str) -> None:
                     pass
         except Exception:
             pass
-        do_export_for_app(app, content, style_var.get(), page_var.get())
+            
+        template_name = selected_template.get()
+        template_path = None
+        if hasattr(app, 'template_selector'):
+            template_path = app.template_selector.get_template_path(template_name)
+            
+        do_export_for_app(app, content, style_var.get(), page_var.get(), template_path)
 
     def do_export_pdf() -> None:
         dialog.destroy()
@@ -284,7 +317,7 @@ def show_export_options_for_app(app, content: str) -> None:
     ).pack(side="right", padx=5)
 
 
-def do_export_for_app(app, content: str, style: str, page_size: str) -> None:
+def do_export_for_app(app, content: str, style: str, page_size: str, template_path: str = None) -> None:
     """执行导出逻辑。"""
     # 可选：导出前自动规范化 Markdown
     try:
@@ -496,11 +529,18 @@ def do_export_for_app(app, content: str, style: str, page_size: str) -> None:
             except Exception:
                 export_style = (app.config.get('export_style') if hasattr(app, 'config') else None)
 
+            # 获取页眉页脚配置
+            header_footer_config = None
+            if hasattr(app, 'header_footer') and hasattr(app.header_footer, 'config'):
+                header_footer_config = app.header_footer.config
+
             converter = MarkdownToWordConverter(
                 base_dir=base_dir,
                 style=style,
                 page_size=page_size,
                 export_style=export_style,
+                template_path=template_path,
+                header_footer_config=header_footer_config
             )
             converter.convert_text(content, progress_callback=on_progress, cancel_event=cancel_event)
 

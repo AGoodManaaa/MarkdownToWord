@@ -24,6 +24,7 @@ class InlineType(Enum):
     SUPERSCRIPT = "superscript"  # 上标
     SUBSCRIPT = "subscript"      # 下标
     LINEBREAK = "linebreak"      # 换行 <br>
+    FOOTNOTE_REF = "footnote_ref" # 脚注引用 [^1]
 
 
 @dataclass
@@ -69,6 +70,7 @@ def parse_inline(text: str) -> List[InlineElement]:
         r'|(?<!\*)\*(?!\*)([^\*\s][^\*]*[^\*\s]|[^\*\s])\*(?!\*)'  # 12: 斜体 *text*
         r'|(?<!_)_(?!_)([^_\s][^_]*[^_\s]|[^_\s])_(?!_)'    # 13: 斜体 _text_
         r'|(~~.+?~~)'                          # 14: 删除线
+        r'|(\[\^[^\]]+\])'                     # 15: 脚注引用 [^1]
     )
     
     last_end = 0
@@ -87,6 +89,11 @@ def parse_inline(text: str) -> List[InlineElement]:
             m = re.match(r'!\[([^\]]*)\]\(([^\)]+)\)', full_match)
             if m:
                 elements.append(InlineElement(InlineType.IMAGE, m.group(1), m.group(2)))
+        
+        elif full_match.startswith('[^'):
+            # 脚注引用 [^1] - 必须在普通链接之前检查
+            content = full_match[2:-1]  # 去掉 [^ 和 ]
+            elements.append(InlineElement(InlineType.FOOTNOTE_REF, content))
         
         elif full_match.startswith('['):
             # 链接 [text](url)
@@ -137,6 +144,11 @@ def parse_inline(text: str) -> List[InlineElement]:
             # 删除线
             content = full_match[2:-2]
             elements.append(InlineElement(InlineType.STRIKETHROUGH, content))
+
+        elif re.match(r'\[\^([^\]]+)\]', full_match):
+            # 脚注引用 [^1]
+            content = full_match[2:-1]
+            elements.append(InlineElement(InlineType.FOOTNOTE_REF, content))
         
         elif full_match.startswith('*'):
             # 斜体 *text* - 需要提取内部内容
@@ -296,6 +308,15 @@ def parse_markdown(text: str) -> List[BlockElement]:
         img_match = re.match(r'^!\[([^\]]*)\]\(([^\)]+)\)$', line.strip())
         if img_match:
             blocks.append(BlockElement('image', img_match.group(1), language=img_match.group(2)))
+            i += 1
+            continue
+
+        # 脚注定义 [^1]: 内容
+        footnote_match = re.match(r'^\s*\[\^([^\]]+)\][:：]\s*(.*)', line.strip())
+        if footnote_match:
+            ref = footnote_match.group(1)
+            content = footnote_match.group(2)
+            blocks.append(BlockElement('footnote_def', content, language=ref))
             i += 1
             continue
         

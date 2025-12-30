@@ -12,7 +12,8 @@ class EditorContextMenuFeature:
         if text_widget is None:
             return
         try:
-            self.menu = tk.Menu(text_widget, tearoff=0)
+            # 增大右键菜单字体
+            self.menu = tk.Menu(text_widget, tearoff=0, font=("Microsoft YaHei", 12))
             self.menu.add_command(label="撤销", command=self.app._undo)
             self.menu.add_command(label="重做", command=self.app._redo)
             self.menu.add_separator()

@@ -64,6 +64,22 @@ COLORS_DARK = {
 # 当前主题颜色（通过清空+更新的方式在原地修改，供其他模块共享）
 COLORS = COLORS_LIGHT.copy()
 
+def apply_custom_theme(theme_data: dict) -> None:
+    """应用自定义主题颜色（原地更新 COLORS 字典）"""
+    if not isinstance(theme_data, dict):
+        return
+        
+    # 如果是完整的主题配置，提取 colors 字段
+    colors = theme_data.get('colors', theme_data)
+    
+    # 保持原有键值，只更新存在的
+    COLORS.update(colors)
+    
+    # 特殊处理：如果使用了自定义主题，可能需要刷新 UI
+    # CTk 的 set_appearance_mode 可能不够，某些组件颜色是初始化时绑定的
+    # 这通常需要重启应用，或者应用本身实现了动态刷新机制
+
+
 
 DEFAULT_EXPORT_STYLE = {
     'body_cn': '宋体',
