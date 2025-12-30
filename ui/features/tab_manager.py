@@ -463,3 +463,54 @@ class TabManagerFeature:
                 return tab.id
         
         return self.new_tab(file_path=file_path, content=content)
+
+    def save_tab_as(self, tab: TabData) -> bool:
+        """另存为标签页内容
+        
+        Args:
+            tab: 标签数据
+            
+        Returns:
+            bool: 是否保存成功
+        """
+        from tkinter import filedialog
+        file_path = filedialog.asksaveasfilename(
+            title="另存为",
+            defaultextension=".md",
+            filetypes=[("Markdown 文件", "*.md"), ("所有文件", "*.*")]
+        )
+        if not file_path:
+            return False
+        
+        tab.file_path = file_path
+        import os
+        tab.title = os.path.basename(file_path)
+        
+        return self._save_tab(tab)
+    
+    def check_all_tabs_unsaved_changes(self) -> bool:
+        """检查所有标签页是否有未保存的更改
+        
+        Returns:
+            bool: 如果所有更改都处理了（保存或不保存）则返回 True，取消则返回 False
+        """
+        for tab in self.tabs:
+            if tab.modified:
+                # 切换到该标签让用户看到
+                self.switch_tab(tab.id)
+                result = messagebox.askyesnocancel(
+                    "未保存的更改",
+                    f'"{tab.title}" 有未保存的更改。\n是否保存？'
+                )
+                if result is None:  # 取消
+                    return False
+                if result:  # 保存
+                    # 确保内容是最新的
+                    if tab.id == self.active_tab_id:
+                        self._save_current_tab_state()
+                    if not self._save_tab(tab):
+                        return False
+                else:
+                    # 不保存，恢复修改状态以允许关闭
+                    pass
+        return True

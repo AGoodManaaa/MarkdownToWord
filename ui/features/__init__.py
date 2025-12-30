@@ -50,3 +50,4 @@ from .chart_editor import ChartEditorFeature
 from .mindmap import MindmapFeature
 from .bibliography import BibliographyFeature
 from .version_control import VersionControlFeature
+from .autocomplete import AutocompleteFeature

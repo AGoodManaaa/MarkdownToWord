@@ -53,6 +53,9 @@ from ui.features import (
     VersionControlFeature,
     # Phase 4 新增功能
     AIAssistantFeature,
+    TabManagerFeature,
+    PDFExportFeature,
+    AutocompleteFeature,
 )
 from ui.export_helpers import (
     export_to_word_for_app,
@@ -164,9 +167,14 @@ class App(ctk.CTk):
         
         # Phase 4 新增功能
         self.ai_assistant = AIAssistantFeature(self)
+        self.tab_manager = TabManagerFeature(self)
+        self.pdf_export_feature = PDFExportFeature(self)
         
         # 初始化 UI
         self._init_ui()
+        
+        # 初始化需要在UI创建后加载的功能
+        self.autocomplete_feature = AutocompleteFeature(self)
         
         # 内容修改标记
         self._content_modified = False
@@ -290,6 +298,7 @@ class App(ctk.CTk):
             ("🔍", "搜索", self.show_search_dialog, "Ctrl+F"),
             ("👁", "预览", self.toggle_preview, "Ctrl+P"),
             ("📤", "导出", self.export_to_word, "Ctrl+Shift+S"),
+            ("📄", "PDF", self.export_to_pdf, ""),
             ("🤖", "AI助手", self.show_ai_assistant, "Ctrl+I"),
             ("📦", "批量导出", self.show_batch_export, "Ctrl+B"),
             ("📊", "图表", self.show_chart_editor, "Ctrl+G"),
@@ -1001,6 +1010,11 @@ class App(ctk.CTk):
             
             self.update_status(f"🔤 字体大小: {new_size}px")
     
+    def show_ai_assistant(self):
+        """显示 AI 写作助手"""
+        if hasattr(self, 'ai_assistant') and self.ai_assistant:
+            self.ai_assistant.show_dialog()
+    
     def show_search_dialog(self):
         """显示搜索替换对话框"""
         # 优先使用新的全局搜索替换功能
@@ -1056,18 +1070,52 @@ class App(ctk.CTk):
             self.input_text._textbox.focus()
         except Exception:
             pass
-    
+
     # ==================== 文件保存功能 ====================
     
+    def new_file(self):
+        """新建文件"""
+        # 使用标签管理器新建文件
+        self.tab_manager.new_tab()
+    
+    def open_file(self):
+        """打开文件"""
+        file_path = filedialog.askopenfilename(
+            filetypes=[("Markdown 文件", "*.md"), ("所有文件", "*.*")]
+        )
+        if file_path:
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                
+                # 在新标签页中打开
+                self.tab_manager.open_file_in_tab(file_path, content)
+                self.file_ops.add_recent_file(file_path)
+                
+            except Exception as e:
+                messagebox.showerror("错误", f"无法打开文件: {e}")
+    
     def save_file(self):
-        self.file_ops.save_file()
-
+        """保存文件"""
+        # 使用标签管理器保存当前标签
+        current_tab = self.tab_manager.get_active_tab()
+        if current_tab:
+            # 更新当前内容到标签数据
+            current_tab.content = self.input_text.get("1.0", "end-1c")
+            if self.tab_manager._save_tab(current_tab):
+                self.update_status(f"已保存: {os.path.basename(current_tab.file_path)}")
+    
     def save_file_as(self):
-        self.file_ops.save_file_as()
-    
+        """文件另存为"""
+        current_tab = self.tab_manager.get_active_tab()
+        if current_tab:
+            current_tab.content = self.input_text.get("1.0", "end-1c")
+            if self.tab_manager.save_tab_as(current_tab):
+                self.update_status(f"已另存为: {os.path.basename(current_tab.file_path)}")
+
     def _check_unsaved_changes(self) -> bool:
-        return self.file_ops.check_unsaved_changes()
-    
+        """检查所有标签页是否有未保存的更改"""
+        return self.tab_manager.check_all_tabs_unsaved_changes()
     
     def _on_closing(self):
         """窗口关闭事件"""
