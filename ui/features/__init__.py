@@ -39,3 +39,14 @@ from .watermark import WatermarkFeature
 from .theme_editor import ThemeEditorFeature
 from .template_selector import TemplateSelectorFeature
 from .header_footer_editor import HeaderFooterFeature
+
+# Phase 3 新增功能
+from .document_stats import DocumentStatsFeature
+from .global_search_replace import GlobalSearchReplaceFeature
+from .link_checker import LinkCheckerFeature
+from .snippet_library import SnippetLibraryFeature
+from .batch_export import BatchExportFeature
+from .chart_editor import ChartEditorFeature
+from .mindmap import MindmapFeature
+from .bibliography import BibliographyFeature
+from .version_control import VersionControlFeature

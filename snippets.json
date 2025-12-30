@@ -1,0 +1,112 @@
+[
+  {
+    "id": "table_2x3",
+    "name": "2x3 表格",
+    "content": "| 列1 | 列2 | 列3 |\n|-----|-----|-----|\n| 内容 | 内容 | 内容 |",
+    "category": "表格",
+    "description": "2行3列的基础表格",
+    "shortcut": "",
+    "created_at": "",
+    "used_count": 0
+  },
+  {
+    "id": "code_python",
+    "name": "Python代码块",
+    "content": "```python\n# 在此输入代码\n\n```",
+    "category": "代码",
+    "description": "Python代码块模板",
+    "shortcut": "",
+    "created_at": "",
+    "used_count": 0
+  },
+  {
+    "id": "code_javascript",
+    "name": "JavaScript代码块",
+    "content": "```javascript\n// 在此输入代码\n\n```",
+    "category": "代码",
+    "description": "JavaScript代码块模板",
+    "shortcut": "",
+    "created_at": "",
+    "used_count": 0
+  },
+  {
+    "id": "note_tip",
+    "name": "提示框",
+    "content": "> 💡 **提示**: 在此输入提示内容",
+    "category": "通用",
+    "description": "带图标的提示引用块",
+    "shortcut": "",
+    "created_at": "",
+    "used_count": 0
+  },
+  {
+    "id": "note_warning",
+    "name": "警告框",
+    "content": "> ⚠️ **警告**: 在此输入警告内容",
+    "category": "通用",
+    "description": "带图标的警告引用块",
+    "shortcut": "",
+    "created_at": "",
+    "used_count": 0
+  },
+  {
+    "id": "checkbox_list",
+    "name": "任务列表",
+    "content": "- [ ] 任务1\n- [ ] 任务2\n- [x] 已完成任务",
+    "category": "列表",
+    "description": "带复选框的任务列表",
+    "shortcut": "",
+    "created_at": "",
+    "used_count": 0
+  },
+  {
+    "id": "footnote",
+    "name": "脚注",
+    "content": "这是带脚注的文字[^1]\n\n[^1]: 脚注内容",
+    "category": "通用",
+    "description": "脚注模板",
+    "shortcut": "",
+    "created_at": "",
+    "used_count": 0
+  },
+  {
+    "id": "image",
+    "name": "图片",
+    "content": "![图片描述](图片路径)",
+    "category": "媒体",
+    "description": "图片引用模板",
+    "shortcut": "",
+    "created_at": "",
+    "used_count": 0
+  },
+  {
+    "id": "link",
+    "name": "链接",
+    "content": "[链接文字](URL)",
+    "category": "媒体",
+    "description": "超链接模板",
+    "shortcut": "",
+    "created_at": "",
+    "used_count": 0
+  },
+  {
+    "id": "math_inline",
+    "name": "行内公式",
+    "content": "$E = mc^2$",
+    "category": "公式",
+    "description": "行内数学公式",
+    "shortcut": "",
+    "created_at": "",
+    "used_count": 0
+  },
+  {
+    "id": "math_block",
+    "name": "公式块",
+    "content": "$$\n\\sum_{i=1}^{n} x_i = x_1 + x_2 + \\cdots + x_n\n$$",
+    "category": "公式",
+    "description": "块级数学公式",
+    "shortcut": "",
+    "created_at": "",
+    "used_count": 0
+  }
+]

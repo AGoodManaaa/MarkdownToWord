@@ -62,8 +62,9 @@ class MarkdownToWordConverter:
         self._id_to_bookmark = {}
         self._id_to_label = {}
         
-        # 脚注存储
+        # 脚注和尾注存储
         self.footnotes = {}
+        self.endnotes = {}
         self._fig_counter = 0
         self._tbl_counter = 0
         self._sec_counters = [0, 0, 0, 0]
@@ -220,6 +221,15 @@ class MarkdownToWordConverter:
                         text = c.get('text')
                         if ref:
                             self.footnotes[ref] = text or ''
+                    continue
+                
+                # 预先收集尾注定义
+                if t == 'endnote_def':
+                    if isinstance(c, dict):
+                        ref = c.get('ref')
+                        text = c.get('text')
+                        if ref:
+                            self.endnotes[ref] = text or ''
                     continue
 
                 if t and t.startswith('heading_'):
@@ -470,6 +480,15 @@ class MarkdownToWordConverter:
             # 目录标记 [[TOC]]（单独一行）
             if line.strip() == '[[TOC]]':
                 blocks.append({'type': 'toc', 'content': '', 'start_line': i + 1})
+                i += 1
+                continue
+            
+            # 尾注定义 [^^1]: 内容 (必须在脚注之前检查)
+            endnote_match = re.match(r'^\s*\[\^\^([^\]]+)\][:：]\s*(.*)', line.strip())
+            if endnote_match:
+                ref = endnote_match.group(1)
+                content = endnote_match.group(2)
+                blocks.append({'type': 'endnote_def', 'content': {'ref': ref, 'text': content}, 'start_line': i + 1})
                 i += 1
                 continue
             
@@ -948,6 +967,157 @@ class MarkdownToWordConverter:
         rel.set('Target', 'footnotes.xml')
         
         return etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone='yes')
+    
+    # ==================== 尾注系统 ====================
+    
+    def _setup_endnotes_part(self):
+        """初始化尾注系统 - 使用延迟 ZIP 注入方式。"""
+        if hasattr(self, '_endnotes_initialized') and self._endnotes_initialized:
+            return
+        
+        self._endnote_id_counter = 2  # 从 2 开始（0 和 1 被保留）
+        self._endnote_ref_to_id = {}  # 映射 Markdown 引用 ID 到 Word 尾注 ID
+        self._pending_endnotes = []  # 待注入的尾注内容列表
+        self._endnotes_initialized = True
+    
+    def _add_native_endnote(self, paragraph, ref_id: str, content: str):
+        """向段落中插入原生 Word 尾注引用。"""
+        self._setup_endnotes_part()
+        
+        if ref_id not in self._endnote_ref_to_id:
+            en_id = str(self._endnote_id_counter)
+            self._endnote_id_counter += 1
+            self._endnote_ref_to_id[ref_id] = en_id
+            
+            self._pending_endnotes.append({
+                'id': en_id,
+                'content': content or ''
+            })
+        else:
+            en_id = self._endnote_ref_to_id[ref_id]
+        
+        run = paragraph.add_run()
+        run._r.append(self._create_endnote_reference_element(en_id))
+    
+    def _create_endnote_reference_element(self, en_id: str):
+        """创建 w:endnoteReference 元素"""
+        endnote_ref = OxmlElement('w:endnoteReference')
+        endnote_ref.set(qn('w:id'), en_id)
+        return endnote_ref
+    
+    def _inject_endnotes_into_docx(self, docx_path: str):
+        """在保存后的 docx 文件中注入 endnotes.xml。"""
+        import zipfile
+        import shutil
+        from lxml import etree
+        
+        if not hasattr(self, '_pending_endnotes') or not self._pending_endnotes:
+            return
+        
+        nsmap = {
+            'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+        }
+        w = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+        
+        endnotes_root = etree.Element(f'{w}endnotes', nsmap=nsmap)
+        
+        # 分隔符尾注 (id=0)
+        en_sep = etree.SubElement(endnotes_root, f'{w}endnote', {f'{w}type': 'separator', f'{w}id': '0'})
+        p_sep = etree.SubElement(en_sep, f'{w}p')
+        r_sep = etree.SubElement(p_sep, f'{w}r')
+        etree.SubElement(r_sep, f'{w}separator')
+        
+        # 续页分隔符尾注 (id=1)
+        en_cont = etree.SubElement(endnotes_root, f'{w}endnote', {f'{w}type': 'continuationSeparator', f'{w}id': '1'})
+        p_cont = etree.SubElement(en_cont, f'{w}p')
+        r_cont = etree.SubElement(p_cont, f'{w}r')
+        etree.SubElement(r_cont, f'{w}continuationSeparator')
+        
+        # 添加实际尾注
+        for en in self._pending_endnotes:
+            en_elem = etree.SubElement(endnotes_root, f'{w}endnote', {f'{w}id': en['id']})
+            p_elem = etree.SubElement(en_elem, f'{w}p')
+            
+            r_ref = etree.SubElement(p_elem, f'{w}r')
+            rPr_ref = etree.SubElement(r_ref, f'{w}rPr')
+            etree.SubElement(rPr_ref, f'{w}rStyle', {f'{w}val': 'EndnoteReference'})
+            etree.SubElement(r_ref, f'{w}endnoteRef')
+            
+            r_space = etree.SubElement(p_elem, f'{w}r')
+            t_space = etree.SubElement(r_space, f'{w}t')
+            t_space.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+            t_space.text = ' '
+            
+            r_text = etree.SubElement(p_elem, f'{w}r')
+            t_text = etree.SubElement(r_text, f'{w}t')
+            t_text.text = en['content']
+        
+        endnotes_xml = etree.tostring(endnotes_root, xml_declaration=True, encoding='UTF-8', standalone='yes')
+        
+        temp_path = docx_path + '.tmp2'
+        
+        with zipfile.ZipFile(docx_path, 'r') as zin:
+            with zipfile.ZipFile(temp_path, 'w', zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    data = zin.read(item.filename)
+                    
+                    if item.filename == '[Content_Types].xml':
+                        data = self._update_content_types_endnotes(data)
+                    elif item.filename == 'word/_rels/document.xml.rels':
+                        data = self._update_document_rels_endnotes(data)
+                    
+                    zout.writestr(item, data)
+                
+                zout.writestr('word/endnotes.xml', endnotes_xml)
+        
+        shutil.move(temp_path, docx_path)
+    
+    def _update_content_types_endnotes(self, data: bytes) -> bytes:
+        """更新 [Content_Types].xml 以包含 endnotes.xml"""
+        from lxml import etree
+        
+        root = etree.fromstring(data)
+        ns = '{http://schemas.openxmlformats.org/package/2006/content-types}'
+        
+        for override in root.findall(f'{ns}Override'):
+            if override.get('PartName') == '/word/endnotes.xml':
+                return data
+        
+        override = etree.SubElement(root, f'{ns}Override')
+        override.set('PartName', '/word/endnotes.xml')
+        override.set('ContentType', 'application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml')
+        
+        return etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone='yes')
+    
+    def _update_document_rels_endnotes(self, data: bytes) -> bytes:
+        """更新 word/_rels/document.xml.rels 以引用 endnotes.xml"""
+        from lxml import etree
+        
+        root = etree.fromstring(data)
+        ns = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+        
+        for rel in root.findall(f'{ns}Relationship'):
+            if rel.get('Target') == 'endnotes.xml':
+                return data
+        
+        max_id = 0
+        for rel in root.findall(f'{ns}Relationship'):
+            rid = rel.get('Id', '')
+            if rid.startswith('rId'):
+                try:
+                    num = int(rid[3:])
+                    max_id = max(max_id, num)
+                except ValueError:
+                    pass
+        
+        rel = etree.SubElement(root, f'{ns}Relationship')
+        rel.set('Id', f'rId{max_id + 1}')
+        rel.set('Type', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes')
+        rel.set('Target', 'endnotes.xml')
+        
+        return etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone='yes')
+
 
 
 
@@ -1644,14 +1814,22 @@ class MarkdownToWordConverter:
             elif elem.type == InlineType.FOOTNOTE_REF:
                 # 脚注引用：使用原生 Word 脚注
                 ref_id = elem.content
-                # 查找对应的脚注内容
                 fn_content = self.footnotes.get(ref_id, '')
                 if fn_content or ref_id in self.footnotes:
                     self._add_native_footnote(paragraph, ref_id, fn_content)
                 else:
-                    # 如果定义尚未出现，先占位，稍后在 convert_text 中填充
-                    # 暂时插入普通文本标记，之后处理
                     run = paragraph.add_run(f"[^{ref_id}]")
+                    run.font.superscript = True
+                    run.font.size = Pt(9)
+            
+            elif elem.type == InlineType.ENDNOTE_REF:
+                # 尾注引用：使用原生 Word 尾注
+                ref_id = elem.content
+                en_content = self.endnotes.get(ref_id, '')
+                if en_content or ref_id in self.endnotes:
+                    self._add_native_endnote(paragraph, ref_id, en_content)
+                else:
+                    run = paragraph.add_run(f"[^^{ref_id}]")
                     run.font.superscript = True
                     run.font.size = Pt(9)
 
@@ -1757,10 +1935,20 @@ class MarkdownToWordConverter:
         """保存文档"""
         if self.doc:
             self.doc.save(output_path)
+            # 调试输出
+            print(f"[DEBUG] 脚注定义: {self.footnotes}")
+            print(f"[DEBUG] 尾注定义: {self.endnotes}")
+            print(f"[DEBUG] 待注入脚注: {getattr(self, '_pending_footnotes', [])}")
+            print(f"[DEBUG] 待注入尾注: {getattr(self, '_pending_endnotes', [])}")
             # 注入脚注（如果有）
             try:
                 self._inject_footnotes_into_docx(output_path)
             except Exception as e:
                 print(f"脚注注入失败: {e}")
+            # 注入尾注（如果有）
+            try:
+                self._inject_endnotes_into_docx(output_path)
+            except Exception as e:
+                print(f"尾注注入失败: {e}")
             print(f"文档已保存: {output_path}")
 
