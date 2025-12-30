@@ -25,6 +25,7 @@ class InlineType(Enum):
     SUBSCRIPT = "subscript"      # 下标
     LINEBREAK = "linebreak"      # 换行 <br>
     FOOTNOTE_REF = "footnote_ref" # 脚注引用 [^1]
+    ENDNOTE_REF = "endnote_ref"   # 尾注引用 [^^1]
 
 
 @dataclass
@@ -70,7 +71,8 @@ def parse_inline(text: str) -> List[InlineElement]:
         r'|(?<!\*)\*(?!\*)([^\*\s][^\*]*[^\*\s]|[^\*\s])\*(?!\*)'  # 12: 斜体 *text*
         r'|(?<!_)_(?!_)([^_\s][^_]*[^_\s]|[^_\s])_(?!_)'    # 13: 斜体 _text_
         r'|(~~.+?~~)'                          # 14: 删除线
-        r'|(\[\^[^\]]+\])'                     # 15: 脚注引用 [^1]
+        r'|(\[\^\^[^\]]+\])'                    # 15: 尾注引用 [^^1]
+        r'|(\[\^[^\]]+\])'                      # 16: 脚注引用 [^1]
     )
     
     last_end = 0
@@ -89,6 +91,11 @@ def parse_inline(text: str) -> List[InlineElement]:
             m = re.match(r'!\[([^\]]*)\]\(([^\)]+)\)', full_match)
             if m:
                 elements.append(InlineElement(InlineType.IMAGE, m.group(1), m.group(2)))
+        
+        elif full_match.startswith('[^^'):
+            # 尾注引用 [^^1] - 必须在脚注之前检查（更具体的模式优先）
+            content = full_match[3:-1]  # 去掉 [^^ 和 ]
+            elements.append(InlineElement(InlineType.ENDNOTE_REF, content))
         
         elif full_match.startswith('[^'):
             # 脚注引用 [^1] - 必须在普通链接之前检查

@@ -1,541 +1,378 @@
 # -*- coding: utf-8 -*-
 """
-AI 辅助功能 - 文法检查、摘要生成、翻译等
+AI 写作助手功能
+支持 OpenAI GPT 集成，提供润色、续写、翻译、总结等功能
 """
 
+import os
+import json
 import threading
-from tkinter import messagebox
 import customtkinter as ctk
+from tkinter import messagebox, END
 from typing import Optional
+from dataclasses import dataclass
+
+# 尝试导入 OpenAI
+try:
+    import openai
+    HAS_OPENAI = True
+except ImportError:
+    HAS_OPENAI = False
+
+
+@dataclass
+class AIConfig:
+    """AI 配置"""
+    api_key: str = ""
+    api_base: str = "https://api.openai.com/v1"
+    model: str = "gpt-3.5-turbo"
+    temperature: float = 0.7
+    max_tokens: int = 2000
 
 
 class AIAssistantFeature:
-    """AI辅助功能管理器"""
+    """AI 写作助手功能"""
+    
+    # 预设提示词
+    PROMPTS = {
+        "polish": ("✨ 润色", "请润色以下文本，使其更加流畅、专业，保持原意：\n\n{text}"),
+        "continue": ("📝 续写", "请根据以下内容继续写作，保持风格一致，续写约200字：\n\n{text}"),
+        "translate_en": ("🌐 译英", "请将以下中文翻译成英文：\n\n{text}"),
+        "translate_cn": ("🌐 译中", "请将以下英文翻译成中文：\n\n{text}"),
+        "summarize": ("📋 总结", "请用简洁的语言总结以下内容的要点：\n\n{text}"),
+        "expand": ("📖 扩写", "请将以下内容扩展详细，增加更多细节：\n\n{text}"),
+        "simplify": ("🔤 简化", "请用更简单易懂的语言重写：\n\n{text}"),
+        "formal": ("📜 正式化", "请将以下文本改写为正式书面语体：\n\n{text}"),
+        "fix_grammar": ("🔧 修正", "请检查并修正语法和拼写错误：\n\n{text}"),
+        "casual": ("💬 口语化", "请将以下文本改写为轻松口语风格：\n\n{text}"),
+    }
     
     def __init__(self, app):
         self.app = app
-        self.ai_dialog = None
-        self.api_key = None  # TODO: 从配置加载
-        self.api_provider = "openai"  # openai, gemini, local等
-        
-    def show_ai_dialog(self):
-        """显示AI助手对话框"""
-        if self.ai_dialog and self.ai_dialog.winfo_exists():
-            self.ai_dialog.focus()
-            return
-            
-        self.ai_dialog = ctk.CTkToplevel(self.app)
-        self.ai_dialog.title("🤖 AI 助手")
-        self.ai_dialog.geometry("600x700")
-        self.ai_dialog.transient(self.app)
-        
-        # 标题
-        title_label = ctk.CTkLabel(
-            self.ai_dialog,
-            text="AI 写作助手",
-            font=ctk.CTkFont(size=20, weight="bold")
-        )
-        title_label.pack(pady=20)
-        
-        # 功能选项卡
-        tabview = ctk.CTkTabview(self.ai_dialog, width=560, height=550)
-        tabview.pack(padx=20, pady=10)
-        
-        # 添加各个功能标签页
-        tabview.add("文法检查")
-        tabview.add("生成摘要")
-        tabview.add("翻译")
-        tabview.add("优化排版")
-        tabview.add("续写")
-        
-        # === 文法检查标签页 ===
-        self._create_grammar_check_tab(tabview.tab("文法检查"))
-        
-        # === 生成摘要标签页 ===
-        self._create_summary_tab(tabview.tab("生成摘要"))
-        
-        # === 翻译标签页 ===
-        self._create_translation_tab(tabview.tab("翻译"))
-        
-        # === 优化排版标签页 ===
-        self._create_formatting_tab(tabview.tab("优化排版"))
-        
-        # === 续写标签页 ===
-        self._create_continue_writing_tab(tabview.tab("续写"))
-        
-        # 底部设置按钮
-        settings_btn = ctk.CTkButton(
-            self.ai_dialog,
-            text="⚙️ API设置",
-            command=self._show_api_settings,
-            width=120
-        )
-        settings_btn.pack(pady=10)
-        
-    def _create_grammar_check_tab(self, parent):
-        """创建文法检查标签页"""
-        info_label = ctk.CTkLabel(
-            parent,
-            text="AI 将检查文档的语法、拼写和表达问题",
-            font=ctk.CTkFont(size=12)
-        )
-        info_label.pack(pady=10)
-        
-        # 选项
-        self.check_spelling_var = ctk.BooleanVar(value=True)
-        spelling_check = ctk.CTkCheckBox(
-            parent,
-            text="拼写检查",
-            variable=self.check_spelling_var
-        )
-        spelling_check.pack(anchor="w", padx=20, pady=5)
-        
-        self.check_grammar_var = ctk.BooleanVar(value=True)
-        grammar_check = ctk.CTkCheckBox(
-            parent,
-            text="语法检查",
-            variable=self.check_grammar_var
-        )
-        grammar_check.pack(anchor="w", padx=20, pady=5)
-        
-        self.check_style_var = ctk.BooleanVar(value=True)
-        style_check = ctk.CTkCheckBox(
-            parent,
-            text="风格优化建议",
-            variable=self.check_style_var
-        )
-        style_check.pack(anchor="w", padx=20, pady=5)
-        
-        # 结果显示
-        result_frame = ctk.CTkFrame(parent)
-        result_frame.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        self.grammar_result = ctk.CTkTextbox(result_frame, height=250)
-        self.grammar_result.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # 执行按钮
-        check_btn = ctk.CTkButton(
-            parent,
-            text="🔍 开始检查",
-            command=self._run_grammar_check,
-            fg_color="#10B981",
-            hover_color="#059669"
-        )
-        check_btn.pack(pady=10)
-        
-    def _create_summary_tab(self, parent):
-        """创建摘要生成标签页"""
-        info_label = ctk.CTkLabel(
-            parent,
-            text="AI 将为你的文档生成简洁的摘要",
-            font=ctk.CTkFont(size=12)
-        )
-        info_label.pack(pady=10)
-        
-        # 摘要长度选择
-        length_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        length_frame.pack(pady=10)
-        
-        ctk.CTkLabel(length_frame, text="摘要长度:").pack(side="left", padx=5)
-        
-        self.summary_length_var = ctk.StringVar(value="medium")
-        length_options = ctk.CTkSegmentedButton(
-            length_frame,
-            values=["简短", "中等", "详细"],
-            variable=self.summary_length_var
-        )
-        length_options.pack(side="left", padx=5)
-        
-        # 结果显示
-        result_frame = ctk.CTkFrame(parent)
-        result_frame.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        self.summary_result = ctk.CTkTextbox(result_frame, height=250)
-        self.summary_result.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # 执行按钮
-        generate_btn = ctk.CTkButton(
-            parent,
-            text="✨ 生成摘要",
-            command=self._generate_summary,
-            fg_color="#8B5CF6",
-            hover_color="#7C3AED"
-        )
-        generate_btn.pack(pady=10)
-        
-    def _create_translation_tab(self, parent):
-        """创建翻译标签页"""
-        info_label = ctk.CTkLabel(
-            parent,
-            text="翻译你的文档内容",
-            font=ctk.CTkFont(size=12)
-        )
-        info_label.pack(pady=10)
-        
-        # 语言选择
-        lang_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        lang_frame.pack(pady=10)
-        
-        ctk.CTkLabel(lang_frame, text="目标语言:").pack(side="left", padx=5)
-        
-        self.target_lang_var = ctk.StringVar(value="英文")
-        lang_menu = ctk.CTkOptionMenu(
-            lang_frame,
-            values=["英文", "中文", "日文", "韩文", "法文", "德文", "西班牙文"],
-            variable=self.target_lang_var
-        )
-        lang_menu.pack(side="left", padx=5)
-        
-        # 翻译选项
-        self.keep_formatting_var = ctk.BooleanVar(value=True)
-        keep_format_check = ctk.CTkCheckBox(
-            parent,
-            text="保留Markdown格式",
-            variable=self.keep_formatting_var
-        )
-        keep_format_check.pack(anchor="w", padx=20, pady=5)
-        
-        # 结果显示
-        result_frame = ctk.CTkFrame(parent)
-        result_frame.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        self.translation_result = ctk.CTkTextbox(result_frame, height=250)
-        self.translation_result.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # 按钮组
-        btn_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_frame.pack(pady=10)
-        
-        translate_btn = ctk.CTkButton(
-            btn_frame,
-            text="🌍 翻译",
-            command=self._translate_text,
-            fg_color="#3B82F6",
-            hover_color="#2563EB",
-            width=120
-        )
-        translate_btn.pack(side="left", padx=5)
-        
-        apply_btn = ctk.CTkButton(
-            btn_frame,
-            text="✅ 应用到编辑器",
-            command=self._apply_translation,
-            width=140
-        )
-        apply_btn.pack(side="left", padx=5)
-        
-    def _create_formatting_tab(self, parent):
-        """创建优化排版标签页"""
-        info_label = ctk.CTkLabel(
-            parent,
-            text="AI 将优化文档的排版和结构",
-            font=ctk.CTkFont(size=12)
-        )
-        info_label.pack(pady=10)
-        
-        # 优化选项
-        options_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        options_frame.pack(fill="x", padx=20, pady=10)
-        
-        self.fix_headings_var = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(
-            options_frame,
-            text="优化标题层级",
-            variable=self.fix_headings_var
-        ).pack(anchor="w", pady=3)
-        
-        self.fix_lists_var = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(
-            options_frame,
-            text="规范列表格式",
-            variable=self.fix_lists_var
-        ).pack(anchor="w", pady=3)
-        
-        self.add_toc_var = ctk.BooleanVar(value=False)
-        ctk.CTkCheckBox(
-            options_frame,
-            text="添加目录",
-            variable=self.add_toc_var
-        ).pack(anchor="w", pady=3)
-        
-        # 结果预览
-        result_frame = ctk.CTkFrame(parent)
-        result_frame.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        self.formatting_result = ctk.CTkTextbox(result_frame, height=250)
-        self.formatting_result.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # 执行按钮
-        btn_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_frame.pack(pady=10)
-        
-        optimize_btn = ctk.CTkButton(
-            btn_frame,
-            text="✨ 优化排版",
-            command=self._optimize_formatting,
-            fg_color="#F59E0B",
-            hover_color="#D97706",
-            width=120
-        )
-        optimize_btn.pack(side="left", padx=5)
-        
-        apply_btn = ctk.CTkButton(
-            btn_frame,
-            text="✅ 应用",
-            command=self._apply_formatting,
-            width=100
-        )
-        apply_btn.pack(side="left", padx=5)
-        
-    def _create_continue_writing_tab(self, parent):
-        """创建续写标签页"""
-        info_label = ctk.CTkLabel(
-            parent,
-            text="AI 将根据现有内容智能续写",
-            font=ctk.CTkFont(size=12)
-        )
-        info_label.pack(pady=10)
-        
-        # 续写长度
-        length_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        length_frame.pack(pady=10)
-        
-        ctk.CTkLabel(length_frame, text="续写长度:").pack(side="left", padx=5)
-        
-        self.continue_length_var = ctk.StringVar(value="100")
-        length_entry = ctk.CTkEntry(
-            length_frame,
-            textvariable=self.continue_length_var,
-            width=80
-        )
-        length_entry.pack(side="left", padx=5)
-        
-        ctk.CTkLabel(length_frame, text="字").pack(side="left", padx=5)
-        
-        # 风格选择
-        style_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        style_frame.pack(pady=10)
-        
-        ctk.CTkLabel(style_frame, text="写作风格:").pack(side="left", padx=5)
-        
-        self.writing_style_var = ctk.StringVar(value="延续当前风格")
-        style_menu = ctk.CTkOptionMenu(
-            style_frame,
-            values=["延续当前风格", "正式", "轻松", "学术", "创意"],
-            variable=self.writing_style_var
-        )
-        style_menu.pack(side="left", padx=5)
-        
-        # 结果显示
-        result_frame = ctk.CTkFrame(parent)
-        result_frame.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        self.continue_result = ctk.CTkTextbox(result_frame, height=250)
-        self.continue_result.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # 按钮
-        btn_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_frame.pack(pady=10)
-        
-        continue_btn = ctk.CTkButton(
-            btn_frame,
-            text="✍️ 续写",
-            command=self._continue_writing,
-            fg_color="#EC4899",
-            hover_color="#DB2777",
-            width=120
-        )
-        continue_btn.pack(side="left", padx=5)
-        
-        insert_btn = ctk.CTkButton(
-            btn_frame,
-            text="➕ 插入到编辑器",
-            command=self._insert_continued_text,
-            width=140
-        )
-        insert_btn.pack(side="left", padx=5)
-        
-    def _show_api_settings(self):
-        """显示API设置对话框"""
-        settings_dialog = ctk.CTkToplevel(self.ai_dialog)
-        settings_dialog.title("API 设置")
-        settings_dialog.geometry("500x400")
-        settings_dialog.transient(self.ai_dialog)
-        
-        title = ctk.CTkLabel(
-            settings_dialog,
-            text="AI API 配置",
-            font=ctk.CTkFont(size=16, weight="bold")
-        )
-        title.pack(pady=20)
-        
-        # API提供商选择
-        provider_frame = ctk.CTkFrame(settings_dialog, fg_color="transparent")
-        provider_frame.pack(fill="x", padx=20, pady=10)
-        
-        ctk.CTkLabel(provider_frame, text="API提供商:").pack(anchor="w", pady=5)
-        
-        provider_var = ctk.StringVar(value=self.api_provider)
-        provider_menu = ctk.CTkOptionMenu(
-            provider_frame,
-            values=["OpenAI", "Google Gemini", "本地模型", "自定义"],
-            variable=provider_var,
-            width=200
-        )
-        provider_menu.pack(anchor="w", pady=5)
-        
-        # API Key
-        key_frame = ctk.CTkFrame(settings_dialog, fg_color="transparent")
-        key_frame.pack(fill="x", padx=20, pady=10)
-        
-        ctk.CTkLabel(key_frame, text="API Key:").pack(anchor="w", pady=5)
-        
-        key_entry = ctk.CTkEntry(
-            key_frame,
-            placeholder_text="请输入你的API Key",
-            width=400,
-            show="*"
-        )
-        key_entry.pack(anchor="w", pady=5)
-        if self.api_key:
-            key_entry.insert(0, self.api_key)
-        
-        # 说明
-        info_text = ctk.CTkTextbox(settings_dialog, height=100, width=460)
-        info_text.pack(padx=20, pady=10)
-        info_text.insert("1.0", 
-            "💡 提示:\n"
-            "- OpenAI: 需要 OpenAI API Key\n"
-            "- Google Gemini: 需要 Google API Key\n"
-            "- 本地模型: 需要先配置本地大模型服务\n"
-            "- 请妥善保管你的API Key，不要泄露给他人"
-        )
-        info_text.configure(state="disabled")
-        
-        # 保存按钮
-        save_btn = ctk.CTkButton(
-            settings_dialog,
-            text="💾 保存",
-            command=lambda: self._save_api_settings(
-                provider_var.get(),
-                key_entry.get(),
-                settings_dialog
-            ),
-            fg_color="#10B981",
-            hover_color="#059669"
-        )
-        save_btn.pack(pady=20)
-        
-    def _save_api_settings(self, provider: str, api_key: str, dialog):
-        """保存API设置"""
-        self.api_provider = provider.lower()
-        self.api_key = api_key
-        
-        # TODO: 保存到配置文件
-        
-        messagebox.showinfo("成功", "API 设置已保存")
-        dialog.destroy()
-        
-    # === AI功能实现方法 ===
+        self.dialog = None
+        self.config_file = os.path.join(os.path.dirname(__file__), '..', '..', 'ai_config.json')
+        self.config = self._load_config()
+        self.is_generating = False
     
-    def _run_grammar_check(self):
-        """执行文法检查"""
-        content = self.app.input_text.get("1.0", "end-1c")
-        if not content.strip():
-            messagebox.showwarning("提示", "编辑器内容为空！")
+    def _load_config(self) -> AIConfig:
+        """加载配置"""
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return AIConfig(**data)
+        except Exception:
+            pass
+        return AIConfig()
+    
+    def _save_config(self):
+        """保存配置"""
+        try:
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                data = {
+                    "api_key": self.config.api_key,
+                    "api_base": self.config.api_base,
+                    "model": self.config.model,
+                    "temperature": self.config.temperature,
+                    "max_tokens": self.config.max_tokens
+                }
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存AI配置失败: {e}")
+    
+    def show_dialog(self):
+        """显示AI助手对话框"""
+        if self.dialog is not None and self.dialog.winfo_exists():
+            self.dialog.focus()
             return
-            
-        self.grammar_result.delete("1.0", "end")
-        self.grammar_result.insert("1.0", "正在检查...\n")
         
-        # TODO: 调用AI API进行检查
-        # 这里是示例代码
-        def mock_check():
-            import time
-            time.sleep(2)
-            result = "✅ 文法检查完成\n\n"
-            result += "未发现明显的语法错误。\n\n"
-            result += "建议:\n"
-            result += "- 第3段可以更简洁\n"
-            result += "- 第5段标点使用规范\n"
-            
-            self.grammar_result.delete("1.0", "end")
-            self.grammar_result.insert("1.0", result)
-            
-        thread = threading.Thread(target=mock_check, daemon=True)
+        self.dialog = ctk.CTkToplevel(self.app)
+        self.dialog.title("🤖 AI 写作助手")
+        self.dialog.geometry("750x680")
+        self.dialog.transient(self.app)
+        
+        # 居中
+        self.dialog.update_idletasks()
+        x = self.app.winfo_x() + (self.app.winfo_width() - 750) // 2
+        y = self.app.winfo_y() + (self.app.winfo_height() - 680) // 2
+        self.dialog.geometry(f"+{x}+{y}")
+        
+        try:
+            from ui.dialog_utils import set_dialog_icon
+            set_dialog_icon(self.dialog)
+        except:
+            pass
+        
+        main_frame = ctk.CTkFrame(self.dialog)
+        main_frame.pack(fill="both", expand=True, padx=15, pady=15)
+        
+        # API 配置区
+        config_frame = ctk.CTkFrame(main_frame, fg_color=("gray90", "gray20"))
+        config_frame.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkLabel(config_frame, text="API Key:").pack(side="left", padx=10, pady=8)
+        self.api_key_entry = ctk.CTkEntry(config_frame, width=280, show="*")
+        self.api_key_entry.pack(side="left", padx=5)
+        if self.config.api_key:
+            self.api_key_entry.insert(0, self.config.api_key)
+        
+        ctk.CTkLabel(config_frame, text="模型:").pack(side="left", padx=(15, 5))
+        self.model_var = ctk.StringVar(value=self.config.model)
+        models = ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4o", "gpt-4o-mini"]
+        ctk.CTkOptionMenu(config_frame, values=models, variable=self.model_var, width=120).pack(side="left")
+        
+        ctk.CTkButton(config_frame, text="⚙️", width=35, command=self._show_settings).pack(side="right", padx=10)
+        
+        # 功能按钮
+        func_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        func_frame.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkLabel(func_frame, text="功能:", font=("", 13, "bold")).pack(side="left", padx=(0, 8))
+        
+        btn_container = ctk.CTkFrame(func_frame, fg_color="transparent")
+        btn_container.pack(side="left", fill="x", expand=True)
+        
+        row1 = ctk.CTkFrame(btn_container, fg_color="transparent")
+        row1.pack(fill="x")
+        row2 = ctk.CTkFrame(btn_container, fg_color="transparent")
+        row2.pack(fill="x", pady=(4, 0))
+        
+        prompts = list(self.PROMPTS.items())
+        for i, (key, (name, _)) in enumerate(prompts[:5]):
+            ctk.CTkButton(row1, text=name, width=85, command=lambda k=key: self._execute(k)).pack(side="left", padx=2)
+        for i, (key, (name, _)) in enumerate(prompts[5:]):
+            ctk.CTkButton(row2, text=name, width=85, command=lambda k=key: self._execute(k)).pack(side="left", padx=2)
+        
+        # 输入区
+        ctk.CTkLabel(main_frame, text="输入文本:", anchor="w").pack(fill="x")
+        self.input_text = ctk.CTkTextbox(main_frame, height=140)
+        self.input_text.pack(fill="x", pady=(5, 10))
+        self._load_selection()
+        
+        # 自定义提示词
+        custom_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        custom_frame.pack(fill="x", pady=(0, 10))
+        ctk.CTkLabel(custom_frame, text="自定义指令:").pack(side="left")
+        self.custom_prompt = ctk.CTkEntry(custom_frame, placeholder_text="例如：改写成诗歌形式...")
+        self.custom_prompt.pack(side="left", fill="x", expand=True, padx=5)
+        ctk.CTkButton(custom_frame, text="▶ 执行", width=70, command=self._execute_custom).pack(side="right")
+        
+        # 输出区
+        output_header = ctk.CTkFrame(main_frame, fg_color="transparent")
+        output_header.pack(fill="x")
+        ctk.CTkLabel(output_header, text="AI 输出:", anchor="w").pack(side="left")
+        self.status_label = ctk.CTkLabel(output_header, text="", text_color=("gray50", "gray70"))
+        self.status_label.pack(side="right")
+        
+        self.output_text = ctk.CTkTextbox(main_frame, height=180)
+        self.output_text.pack(fill="both", expand=True, pady=(5, 10))
+        
+        # 底部按钮
+        btn_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        btn_frame.pack(fill="x")
+        
+        ctk.CTkButton(btn_frame, text="📋 复制", width=80, command=self._copy).pack(side="left", padx=(0, 5))
+        ctk.CTkButton(btn_frame, text="📥 插入", width=80, fg_color=("green", "darkgreen"), command=self._insert).pack(side="left", padx=(0, 5))
+        ctk.CTkButton(btn_frame, text="🔄 替换选中", width=100, command=self._replace).pack(side="left")
+        
+        self.stop_btn = ctk.CTkButton(btn_frame, text="⏹ 停止", width=70, fg_color=("red", "darkred"), command=self._stop, state="disabled")
+        self.stop_btn.pack(side="right")
+    
+    def _load_selection(self):
+        """加载选中文本"""
+        try:
+            textbox = self._get_textbox()
+            if textbox:
+                try:
+                    selected = textbox.get("sel.first", "sel.last")
+                    if selected:
+                        self.input_text.insert("1.0", selected)
+                except:
+                    pass
+        except:
+            pass
+    
+    def _get_textbox(self):
+        try:
+            if hasattr(self.app, 'input_text') and self.app.input_text is not None:
+                return getattr(self.app.input_text, '_textbox', self.app.input_text)
+        except:
+            pass
+        return None
+    
+    def _show_settings(self):
+        """高级设置"""
+        settings = ctk.CTkToplevel(self.dialog)
+        settings.title("⚙️ 高级设置")
+        settings.geometry("420x320")
+        settings.transient(self.dialog)
+        settings.grab_set()
+        
+        frame = ctk.CTkFrame(settings)
+        frame.pack(fill="both", expand=True, padx=15, pady=15)
+        
+        ctk.CTkLabel(frame, text="API Base URL:").pack(anchor="w")
+        base_entry = ctk.CTkEntry(frame, width=380)
+        base_entry.pack(fill="x", pady=(0, 10))
+        base_entry.insert(0, self.config.api_base)
+        
+        ctk.CTkLabel(frame, text=f"Temperature: {self.config.temperature}").pack(anchor="w")
+        temp_slider = ctk.CTkSlider(frame, from_=0, to=1, number_of_steps=10)
+        temp_slider.pack(fill="x", pady=(0, 10))
+        temp_slider.set(self.config.temperature)
+        
+        ctk.CTkLabel(frame, text="Max Tokens:").pack(anchor="w")
+        tokens_entry = ctk.CTkEntry(frame, width=100)
+        tokens_entry.pack(anchor="w", pady=(0, 10))
+        tokens_entry.insert(0, str(self.config.max_tokens))
+        
+        def save():
+            self.config.api_base = base_entry.get()
+            self.config.temperature = temp_slider.get()
+            try:
+                self.config.max_tokens = int(tokens_entry.get())
+            except:
+                pass
+            self._save_config()
+            settings.destroy()
+        
+        ctk.CTkButton(frame, text="保存", command=save).pack(pady=15)
+    
+    def _execute(self, prompt_key: str):
+        """执行预设提示"""
+        text = self.input_text.get("1.0", "end-1c").strip()
+        if not text:
+            messagebox.showwarning("警告", "请输入要处理的文本")
+            return
+        
+        _, prompt_template = self.PROMPTS[prompt_key]
+        prompt = prompt_template.format(text=text)
+        self._call_api(prompt)
+    
+    def _execute_custom(self):
+        """执行自定义提示"""
+        text = self.input_text.get("1.0", "end-1c").strip()
+        custom = self.custom_prompt.get().strip()
+        if not text:
+            messagebox.showwarning("警告", "请输入要处理的文本")
+            return
+        if not custom:
+            messagebox.showwarning("警告", "请输入自定义指令")
+            return
+        
+        prompt = f"{custom}\n\n{text}"
+        self._call_api(prompt)
+    
+    def _call_api(self, prompt: str):
+        """调用 API"""
+        if not HAS_OPENAI:
+            messagebox.showerror("错误", "请先安装 openai 库:\npip install openai")
+            return
+        
+        self.config.api_key = self.api_key_entry.get()
+        self.config.model = self.model_var.get()
+        self._save_config()
+        
+        if not self.config.api_key:
+            messagebox.showwarning("警告", "请输入 API Key")
+            return
+        
+        self.output_text.delete("1.0", END)
+        self.status_label.configure(text="⏳ 正在生成...")
+        self.stop_btn.configure(state="normal")
+        self.is_generating = True
+        
+        thread = threading.Thread(target=self._api_thread, args=(prompt,), daemon=True)
         thread.start()
-        
-    def _generate_summary(self):
-        """生成摘要"""
-        content = self.app.input_text.get("1.0", "end-1c")
-        if not content.strip():
-            messagebox.showwarning("提示", "编辑器内容为空！")
+    
+    def _api_thread(self, prompt: str):
+        """API 调用线程"""
+        try:
+            client = openai.OpenAI(api_key=self.config.api_key, base_url=self.config.api_base)
+            
+            response = client.chat.completions.create(
+                model=self.config.model,
+                messages=[
+                    {"role": "system", "content": "你是一个专业的写作助手。"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+                stream=True
+            )
+            
+            for chunk in response:
+                if not self.is_generating:
+                    break
+                if chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    self._append(content)
+            
+            self._done()
+            
+        except Exception as e:
+            self._error(str(e))
+    
+    def _append(self, text: str):
+        try:
+            self.dialog.after(0, lambda: self.output_text.insert(END, text))
+        except:
+            pass
+    
+    def _done(self):
+        try:
+            self.dialog.after(0, lambda: self.status_label.configure(text="✅ 完成"))
+            self.dialog.after(0, lambda: self.stop_btn.configure(state="disabled"))
+        except:
+            pass
+        self.is_generating = False
+    
+    def _error(self, msg: str):
+        try:
+            self.dialog.after(0, lambda: self.status_label.configure(text=f"❌ 错误"))
+            self.dialog.after(0, lambda: self.stop_btn.configure(state="disabled"))
+            self.dialog.after(0, lambda: messagebox.showerror("API 错误", msg))
+        except:
+            pass
+        self.is_generating = False
+    
+    def _stop(self):
+        self.is_generating = False
+        self.status_label.configure(text="⏹ 已停止")
+        self.stop_btn.configure(state="disabled")
+    
+    def _copy(self):
+        result = self.output_text.get("1.0", "end-1c")
+        if result:
+            self.dialog.clipboard_clear()
+            self.dialog.clipboard_append(result)
+            self.status_label.configure(text="📋 已复制")
+    
+    def _insert(self):
+        result = self.output_text.get("1.0", "end-1c")
+        if not result:
             return
-            
-        self.summary_result.delete("1.0", "end")
-        self.summary_result.insert("1.0", "正在生成摘要...\n")
-        
-        # TODO: 调用AI API生成摘要
-        
-    def _translate_text(self):
-        """翻译文本"""
-        content = self.app.input_text.get("1.0", "end-1c")
-        if not content.strip():
-            messagebox.showwarning("提示", "编辑器内容为空！")
+        textbox = self._get_textbox()
+        if textbox:
+            textbox.insert("insert", result)
+            self.dialog.destroy()
+            self.dialog = None
+    
+    def _replace(self):
+        result = self.output_text.get("1.0", "end-1c")
+        if not result:
             return
-            
-        target_lang = self.target_lang_var.get()
-        self.translation_result.delete("1.0", "end")
-        self.translation_result.insert("1.0", f"正在翻译为{target_lang}...\n")
-        
-        # TODO: 调用AI API翻译
-        
-    def _apply_translation(self):
-        """应用翻译结果到编辑器"""
-        translated = self.translation_result.get("1.0", "end-1c")
-        if translated.strip():
-            self.app.input_text.delete("1.0", "end")
-            self.app.input_text.insert("1.0", translated)
-            self.app.on_text_change(None)
-            messagebox.showinfo("成功", "翻译结果已应用到编辑器")
-            
-    def _optimize_formatting(self):
-        """优化排版"""
-        content = self.app.input_text.get("1.0", "end-1c")
-        if not content.strip():
-            messagebox.showwarning("提示", "编辑器内容为空！")
-            return
-            
-        self.formatting_result.delete("1.0", "end")
-        self.formatting_result.insert("1.0", "正在优化排版...\n")
-        
-        # TODO: 调用AI API优化
-        
-    def _apply_formatting(self):
-        """应用排版优化"""
-        formatted = self.formatting_result.get("1.0", "end-1c")
-        if formatted.strip():
-            self.app.input_text.delete("1.0", "end")
-            self.app.input_text.insert("1.0", formatted)
-            self.app.on_text_change(None)
-            messagebox.showinfo("成功", "排版优化已应用")
-            
-    def _continue_writing(self):
-        """续写文本"""
-        content = self.app.input_text.get("1.0", "end-1c")
-        if not content.strip():
-            messagebox.showwarning("提示", "编辑器内容为空！")
-            return
-            
-        self.continue_result.delete("1.0", "end")
-        self.continue_result.insert("1.0", "正在续写...\n")
-        
-        # TODO: 调用AI API续写
-        
-    def _insert_continued_text(self):
-        """插入续写内容"""
-        continued = self.continue_result.get("1.0", "end-1c")
-        if continued.strip():
-            self.app.input_text.insert("end", "\n\n" + continued)
-            self.app.on_text_change(None)
-            messagebox.showinfo("成功", "续写内容已插入")
+        textbox = self._get_textbox()
+        if textbox:
+            try:
+                textbox.delete("sel.first", "sel.last")
+                textbox.insert("insert", result)
+                self.dialog.destroy()
+                self.dialog = None
+            except:
+                messagebox.showinfo("提示", "没有选中文本，将在光标处插入")
+                textbox.insert("insert", result)
+    
+    # 兼容旧接口
+    def show_ai_dialog(self):
+        self.show_dialog()

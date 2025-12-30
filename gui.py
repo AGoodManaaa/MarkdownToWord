@@ -41,6 +41,18 @@ from ui.features import (
     ThemeEditorFeature,
     TemplateSelectorFeature,
     HeaderFooterFeature,
+    # Phase 3 新增功能
+    DocumentStatsFeature,
+    GlobalSearchReplaceFeature,
+    LinkCheckerFeature,
+    SnippetLibraryFeature,
+    BatchExportFeature,
+    ChartEditorFeature,
+    MindmapFeature,
+    BibliographyFeature,
+    VersionControlFeature,
+    # Phase 4 新增功能
+    AIAssistantFeature,
 )
 from ui.export_helpers import (
     export_to_word_for_app,
@@ -138,6 +150,20 @@ class App(ctk.CTk):
         self.theme_editor = ThemeEditorFeature(self)
         self.template_selector = TemplateSelectorFeature(self)
         self.header_footer = HeaderFooterFeature(self)
+        
+        # Phase 3 新增功能
+        self.document_stats_feature = DocumentStatsFeature(self)
+        self.global_search_replace = GlobalSearchReplaceFeature(self)
+        self.link_checker = LinkCheckerFeature(self)
+        self.snippet_library = SnippetLibraryFeature(self)
+        self.batch_export_feature = BatchExportFeature(self)
+        self.chart_editor = ChartEditorFeature(self)
+        self.mindmap_feature = MindmapFeature(self)
+        self.bibliography_feature = BibliographyFeature(self)
+        self.version_control = VersionControlFeature(self)
+        
+        # Phase 4 新增功能
+        self.ai_assistant = AIAssistantFeature(self)
         
         # 初始化 UI
         self._init_ui()
@@ -256,15 +282,21 @@ class App(ctk.CTk):
         toolbar_frame = ctk.CTkFrame(self.header, fg_color="transparent")
         toolbar_frame.pack(side="left", padx=24)
         
-        # 工具按钮
+        # 工具按钮 - 使用兼容的 Unicode 符号
         tools = [
             ("📂", "打开", self.open_file, "Ctrl+O"),
             ("💾", "保存", self.save_file, "Ctrl+S"),
-            ("🧹", "规范化", self.format_markdown, "Ctrl+Shift+F"),
+            ("✦", "规范化", self.format_markdown, "Ctrl+Shift+F"),
             ("🔍", "搜索", self.show_search_dialog, "Ctrl+F"),
             ("👁", "预览", self.toggle_preview, "Ctrl+P"),
             ("📤", "导出", self.export_to_word, "Ctrl+Shift+S"),
-            ("�", "导出历史", self.show_export_history, "Ctrl+J"),
+            ("🤖", "AI助手", self.show_ai_assistant, "Ctrl+I"),
+            ("📦", "批量导出", self.show_batch_export, "Ctrl+B"),
+            ("📊", "图表", self.show_chart_editor, "Ctrl+G"),
+            ("🧠", "导图", self.show_mindmap, "Ctrl+T"),
+            ("📑", "文献", self.show_bibliography, "Ctrl+R"),
+            ("🔄", "版本", self.show_version_control, "Ctrl+H"),
+            ("🔗", "链接", self.show_link_checker, "Ctrl+L"),
         ]
         
         self.preview_btn = None
@@ -278,7 +310,7 @@ class App(ctk.CTk):
                 fg_color="transparent",
                 hover_color=COLORS['primary_hover'],
                 text_color="white",
-                font=ctk.CTkFont(size=15, weight="bold"),
+                font=("Segoe UI Emoji", 16),
                 command=cmd,
             )
             btn.pack(side="left", padx=2)
@@ -745,6 +777,70 @@ class App(ctk.CTk):
             show_export_history_dialog(self)
         except Exception:
             pass
+    
+    def show_document_stats(self):
+        """显示文档统计分析。"""
+        try:
+            if hasattr(self, 'document_stats_feature') and self.document_stats_feature:
+                self.document_stats_feature.show_stats()
+        except Exception:
+            pass
+    
+    def show_link_checker(self):
+        """显示链接检查器。"""
+        try:
+            if hasattr(self, 'link_checker') and self.link_checker:
+                self.link_checker.show_dialog()
+        except Exception:
+            pass
+    
+    def show_snippet_library(self):
+        """显示片段库。"""
+        try:
+            if hasattr(self, 'snippet_library') and self.snippet_library:
+                self.snippet_library.show_dialog()
+        except Exception:
+            pass
+    
+    def show_batch_export(self):
+        """显示批量导出。"""
+        try:
+            if hasattr(self, 'batch_export_feature') and self.batch_export_feature:
+                self.batch_export_feature.show_dialog()
+        except Exception:
+            pass
+    
+    def show_chart_editor(self):
+        """显示图表编辑器。"""
+        try:
+            if hasattr(self, 'chart_editor') and self.chart_editor:
+                self.chart_editor.show_dialog()
+        except Exception:
+            pass
+    
+    def show_mindmap(self):
+        """显示思维导图转换器。"""
+        try:
+            if hasattr(self, 'mindmap_feature') and self.mindmap_feature:
+                self.mindmap_feature.show_dialog()
+        except Exception:
+            pass
+    
+    def show_bibliography(self):
+        """显示文献引用管理。"""
+        try:
+            if hasattr(self, 'bibliography_feature') and self.bibliography_feature:
+                self.bibliography_feature.show_dialog()
+        except Exception:
+            pass
+    
+    def show_version_control(self):
+        """显示版本历史。"""
+        try:
+            if hasattr(self, 'version_control') and self.version_control:
+                self.version_control.show_dialog()
+        except Exception:
+            pass
 
     def cancel_export(self):
         """请求取消导出（供导出线程轮询）。"""
@@ -907,8 +1003,11 @@ class App(ctk.CTk):
     
     def show_search_dialog(self):
         """显示搜索替换对话框"""
-        if self.search_dialog is None or not self.search_dialog.winfo_exists():
-            # 获取实际的text widget
+        # 优先使用新的全局搜索替换功能
+        if hasattr(self, 'global_search_replace') and self.global_search_replace:
+            self.global_search_replace.show_dialog()
+        elif self.search_dialog is None or not self.search_dialog.winfo_exists():
+            # 回退到旧版对话框
             text_widget = self.input_editor._textbox
             self.search_dialog = SearchReplaceDialog(self, text_widget)
         else:
