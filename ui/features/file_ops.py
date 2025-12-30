@@ -128,7 +128,13 @@ class FileOpsFeature:
         if not self.app._content_modified:
             return True
 
-        current_content = self.app.input_text.get("1.0", "end-1c")
+        try:
+            # 捕获 TclError，防止在窗口关闭过程中部件已被销毁导致崩溃
+            current_content = self.app.input_text.get("1.0", "end-1c")
+        except Exception:
+            # 如果无法获取内容（例如部件已销毁），假设没有更改或者允许关闭
+            return True
+
         if current_content == self.app._last_saved_content:
             return True
 

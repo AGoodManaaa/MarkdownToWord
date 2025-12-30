@@ -32,6 +32,15 @@ from ui.features import (
     EditorZoomFeature,
     TabManagerFeature,
     StatisticsDetailFeature,
+    UndoRedoFeature,
+    # Phase 1 新增功能
+    FocusModeFeature,
+    ReadingModeFeature,
+    TOCGeneratorFeature,
+    WatermarkFeature,
+    ThemeEditorFeature,
+    TemplateSelectorFeature,
+    HeaderFooterFeature,
 )
 from ui.export_helpers import (
     export_to_word_for_app,
@@ -119,16 +128,37 @@ class App(ctk.CTk):
         self.editor_zoom_feature = EditorZoomFeature(self)
         self.tab_manager = TabManagerFeature(self)
         self.statistics_detail = StatisticsDetailFeature(self)
+        self.undo_redo = UndoRedoFeature(self)  # 添加撤销/重做功能
+        
+        # Phase 1 新增功能
+        self.focus_mode = FocusModeFeature(self)
+        self.reading_mode = ReadingModeFeature(self)
+        self.toc_generator = TOCGeneratorFeature(self)
+        self.watermark_feature = WatermarkFeature(self)
+        self.theme_editor = ThemeEditorFeature(self)
+        self.template_selector = TemplateSelectorFeature(self)
+        self.header_footer = HeaderFooterFeature(self)
+        
+        # 初始化 UI
+        self._init_ui()
         
         # 内容修改标记
         self._content_modified = False
         self._last_saved_content = ""
         self._last_content_snapshot = None
-        
+
+
+    def _init_ui(self):
+        """初始化用户界面"""
         # 构建界面
         self._create_header()
         self._create_status_bar()  # 先创建状态栏
         self._create_main_content()  # 再创建主内容（包含_insert_example调用）
+        
+        # 应用初始主题
+        ctk.set_appearance_mode("Light" if self.config.get('theme') == 'light' else "Dark")
+        if self.config.get('custom_theme'):
+            self.apply_custom_theme(self.config['custom_theme'])
 
         self.header_styler.update_states()
         
@@ -150,6 +180,8 @@ class App(ctk.CTk):
         self.bind('<Control-Shift-z>', lambda e: self._redo())
         self.bind('<Control-k>', lambda e: self.command_palette.show())
         self.bind('<F1>', lambda e: self.show_help())
+        self.bind('<F11>', lambda e: self.focus_mode.toggle())  # 专注模式
+        self.bind('<F12>', lambda e: self.reading_mode.toggle())  # 阅读模式
         
         # 绑定窗口关闭事件
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -171,6 +203,35 @@ class App(ctk.CTk):
         
         # 恢复编辑区缩放比例
         self.editor_zoom_feature.restore_scale()
+        
+        # 设置撤销/重做系统（必须在编辑器创建后）
+        self.after(100, self._setup_undo_system)  # 延迟100ms确保编辑器完全初始化
+    
+    def _setup_undo_system(self):
+        """设置撤销系统"""
+        try:
+            print("=" * 50)
+            print("开始设置撤销系统...")
+            print(f"hasattr(self, 'undo_redo'): {hasattr(self, 'undo_redo')}")
+            print(f"hasattr(self, 'input_text'): {hasattr(self, 'input_text')}")
+            
+            if hasattr(self, 'undo_redo') and hasattr(self, 'input_text'):
+                print(f"hasattr(self.input_text, '_textbox'): {hasattr(self.input_text, '_textbox')}")
+                if hasattr(self.input_text, '_textbox'):
+                    self.undo_redo.setup(self.input_text._textbox)
+                    print("✅ 撤销系统已设置")
+                    print(f"撤销管理器启用状态: {self.undo_redo.undo_manager.enabled if self.undo_redo.undo_manager else 'None'}")
+                else:
+                    print("❌ input_text 没有 _textbox 属性")
+                    # 尝试查找其他可能的属性
+                    print(f"input_text 的属性: {dir(self.input_text)}")
+            else:
+                print("❌ undo_redo 或 input_text 不存在")
+            print("=" * 50)
+        except Exception as e:
+            print(f"⚠️ 撤销系统设置失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _create_header(self):
         """创建顶部标题栏"""
@@ -203,7 +264,7 @@ class App(ctk.CTk):
             ("🔍", "搜索", self.show_search_dialog, "Ctrl+F"),
             ("👁", "预览", self.toggle_preview, "Ctrl+P"),
             ("📤", "导出", self.export_to_word, "Ctrl+Shift+S"),
-            ("�", "历出史", self.show_export_history, "Ctrl+J"),
+            ("�", "导出历史", self.show_export_history, "Ctrl+J"),
         ]
         
         self.preview_btn = None
@@ -311,7 +372,55 @@ class App(ctk.CTk):
         )
         self.theme_btn.pack(side="left", padx=3)
         self._header_default_buttons.append(self.theme_btn)
-        self.tooltip.add_tooltip(self.theme_btn, "主题\n切换明/暗")
+        self.tooltip.add_tooltip(self.theme_btn, "切换亮/暗主题")
+        
+        # 自定义主题
+        self.theme_editor_btn = ctk.CTkButton(
+            btn_frame,
+            text="🎨",
+            command=self.theme_editor.show_editor,
+            fg_color="transparent",
+            text_color="white",
+            hover_color=COLORS['primary_hover'],
+            corner_radius=10,
+            width=38,
+            height=34
+        )
+        self.theme_editor_btn.pack(side="left", padx=3)
+        self._header_default_buttons.append(self.theme_editor_btn)
+        self.tooltip.add_tooltip(self.theme_editor_btn, "自定义主题编辑器")
+        
+        # Phase 1: 专注模式按钮
+        self.focus_mode_btn = ctk.CTkButton(
+            btn_frame,
+            text="🎯",
+            command=self.focus_mode.toggle,
+            fg_color="transparent",
+            text_color="white",
+            hover_color=COLORS['primary_hover'],
+            corner_radius=10,
+            width=38,
+            height=34
+        )
+        self.focus_mode_btn.pack(side="left", padx=3)
+        self._header_default_buttons.append(self.focus_mode_btn)
+        self.tooltip.add_tooltip(self.focus_mode_btn, "专注模式\nF11")
+        
+        # Phase 1: 阅读模式按钮
+        self.reading_mode_btn = ctk.CTkButton(
+            btn_frame,
+            text="📖",
+            command=self.reading_mode.toggle,
+            fg_color="transparent",
+            text_color="white",
+            hover_color=COLORS['primary_hover'],
+            corner_radius=10,
+            width=38,
+            height=34
+        )
+        self.reading_mode_btn.pack(side="left", padx=3)
+        self._header_default_buttons.append(self.reading_mode_btn)
+        self.tooltip.add_tooltip(self.reading_mode_btn, "阅读模式\nF12")
 
         self.export_style_header_btn = ctk.CTkButton(
             btn_frame,
@@ -860,12 +969,35 @@ class App(ctk.CTk):
     def _check_unsaved_changes(self) -> bool:
         return self.file_ops.check_unsaved_changes()
     
+    
     def _on_closing(self):
         """窗口关闭事件"""
-        if self._check_unsaved_changes():
-            # 保存窗口位置和大小
-            self._save_window_geometry()
-            self.destroy()
+        try:
+            if self._check_unsaved_changes():
+                # 保存窗口位置和大小
+                try:
+                    self._save_window_geometry()
+                except:
+                    pass
+                
+                # 强制退出程序
+                try:
+                    self.quit()     # 停止 mainloop
+                    self.destroy()  # 销毁窗口
+                except:
+                    pass
+                
+                import sys
+                sys.exit(0)  # 强制结束进程
+                
+        except Exception as e:
+            print(f"Closing error: {e}")
+            # 最后的重试
+            try:
+                import sys
+                sys.exit(0)
+            except:
+                pass
     
     def _update_title(self):
         """更新窗口标题"""
@@ -882,19 +1014,40 @@ class App(ctk.CTk):
     
     def _undo(self):
         """撤销操作"""
-        try:
-            self.input_text._textbox.edit_undo()
-            self.on_text_change(None)
-        except tk.TclError:
-            pass  # 没有可撤销的操作
+        print("\n调用 _undo()")
+        print(f"hasattr(self, 'undo_redo'): {hasattr(self, 'undo_redo')}")
+        if hasattr(self, 'undo_redo'):
+            print(f"undo_redo.undo_manager: {self.undo_redo.undo_manager}")
+            if self.undo_redo.undo_manager:
+                print(f"undo_manager.enabled: {self.undo_redo.undo_manager.enabled}")
+                print(f"可撤销次数: {self.undo_redo.undo_manager.get_undo_count()}")
+        
+        # 使用新的撤销系统
+        if hasattr(self, 'undo_redo') and self.undo_redo.undo_manager:
+            self.undo_redo.undo()
+        else:
+            print("降级使用原生undo")
+            # 降级使用原生undo（如果新系统未初始化）
+            try:
+                if hasattr(self, 'input_text') and hasattr(self.input_text, '_textbox'):
+                    self.input_text._textbox.edit_undo()
+                    self.on_text_change(None)
+            except tk.TclError:
+                pass  # 没有可撤销的操作
     
     def _redo(self):
         """重做操作"""
-        try:
-            self.input_text._textbox.edit_redo()
-            self.on_text_change(None)
-        except tk.TclError:
-            pass  # 没有可重做的操作
+        # 使用新的撤销系统
+        if hasattr(self, 'undo_redo') and self.undo_redo.undo_manager:
+            self.undo_redo.redo()
+        else:
+            # 降级使用原生redo（如果新系统未初始化）
+            try:
+                if hasattr(self, 'input_text') and hasattr(self.input_text, '_textbox'):
+                    self.input_text._textbox.edit_redo()
+                    self.on_text_change(None)
+            except tk.TclError:
+                pass  # 没有可重做的操作
     
     # ==================== 窗口位置记忆 ====================
     
@@ -949,7 +1102,31 @@ class App(ctk.CTk):
     # ==================== 插入菜单 ====================
     
     def show_insert_menu(self, event=None):
-        self.insert_templates.show_menu(event)
+        """显示插入菜单"""
+        if hasattr(self, 'insert_templates'):
+            menu = tk.Menu(self, tearoff=0)
+            
+            # 基础模板
+            menu.add_command(label="📋 表格", command=self.insert_templates.insert_table_template)
+            menu.add_command(label="🔗 链接", command=self.insert_templates.insert_link_template)
+            menu.add_command(label="🖼️ 图片", command=self.insert_templates.insert_image_template)
+            menu.add_command(label="∑ 公式", command=self.insert_templates.insert_math_template)
+            menu.add_command(label="📝 代码块", command=self.insert_templates.insert_code_template)
+            menu.add_command(label="☑️ 任务列表", command=self.insert_templates.insert_task_template)
+            menu.add_command(label="➖ 分割线", command=self.insert_templates.insert_hr_template)
+            
+            # 分隔符
+            menu.add_separator()
+            
+            # Phase 1 新增功能
+            menu.add_command(label="📑 插入目录 (TOC)", command=self.toc_generator.show_toc_dialog)
+            menu.add_command(label="💧 配置水印", command=self.watermark_feature.show_watermark_dialog)
+            
+            try:
+                menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                menu.grab_release()
+
     
     
 

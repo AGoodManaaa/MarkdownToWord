@@ -17,3 +17,25 @@ from .preview_zoom import PreviewZoomFeature
 from .editor_zoom import EditorZoomFeature
 from .tab_manager import TabManagerFeature, TabData
 from .statistics_detail import StatisticsDetailFeature, DocumentStatistics
+
+# 新功能模块
+from .batch_convert import BatchConvertFeature
+from .word_to_markdown import WordToMarkdownFeature, WordToMarkdownConverter
+from .template_manager import TemplateManager
+from .ai_assistant import AIAssistantFeature
+from .diagram_support import DiagramFeature, MermaidRenderer, PlantUMLRenderer
+from .table_editor import TableEditorFeature
+from .advanced_statistics import AdvancedStatisticsFeature
+from .advanced_search import AdvancedSearchFeature
+from .document_security import DocumentSecurityFeature
+from .quick_tools import QuickToolsFeature
+from .plugin_system import PluginManager, Plugin
+from .undo_redo import UndoRedoFeature, UndoRedoManager, EnhancedTextWidget
+
+# Phase 1 新增功能
+from .focus_reading_mode import FocusModeFeature, ReadingModeFeature
+from .toc_generator import TOCGeneratorFeature
+from .watermark import WatermarkFeature
+from .theme_editor import ThemeEditorFeature
+from .template_selector import TemplateSelectorFeature
+from .header_footer_editor import HeaderFooterFeature

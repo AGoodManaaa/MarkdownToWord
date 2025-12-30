@@ -47,6 +47,7 @@ class InsertTemplatesFeature:
             ("π 公式", "插入LaTeX数学公式", self.insert_math_template),
             ("📝 代码块", "插入代码块", self.insert_code_template),
             ("☐ 任务列表", "插入任务清单", self.insert_task_template),
+            ("📝 页眉页脚", "配置文档页眉页脚", self.open_header_footer_dialog),
             ("─── 分割线", "插入水平分割线", self.insert_hr_template),
         ]
 
@@ -253,4 +254,12 @@ class InsertTemplatesFeature:
     def insert_task_template(self):
         template = """- [ ] 待完成任务 1\n- [ ] 待完成任务 2\n- [x] 已完成任务\n"""
         self._insert_template_and_select(template, "待完成任务 1")
+        self._insert_template_and_select(template, "待完成任务 1")
         self.app.update_status("✅ 已插入任务列表模板")
+
+    def open_header_footer_dialog(self):
+        if hasattr(self.app, 'header_footer'):
+            self.app.header_footer.show_dialog()
+            self.app.update_status("✅ 页眉页脚设置已更新")
+        else:
+             self.app.update_status("⚠️ 功能未初始化")

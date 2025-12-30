@@ -31,7 +31,7 @@ class ConversionError(Exception):
 class MarkdownToWordConverter:
     """Markdown转Word转换器主类"""
     
-    def __init__(self, base_dir: str = None, style: str = "standard", page_size: str = "a4", export_style: dict = None):
+    def __init__(self, base_dir: str = None, style: str = "standard", page_size: str = "a4", export_style: dict = None, template_path: str = None, header_footer_config: dict = None):
         """
         初始化转换器
         
@@ -39,10 +39,13 @@ class MarkdownToWordConverter:
             base_dir: Markdown文件所在目录，用于解析相对路径的图片
             style: 文档样式 (standard/academic/simple)
             page_size: 页面大小 (a4/letter)
+            template_path: Word模板路径 (.docx)
         """
         self.base_dir = base_dir
         self.style = style
         self.page_size = page_size
+        self.template_path = template_path
+        self.header_footer_config = header_footer_config
         self.doc = None
 
         self.export_style = export_style if isinstance(export_style, dict) else {}
@@ -58,6 +61,9 @@ class MarkdownToWordConverter:
         self._bookmark_id_counter = 1
         self._id_to_bookmark = {}
         self._id_to_label = {}
+        
+        # 脚注存储
+        self.footnotes = {}
         self._fig_counter = 0
         self._tbl_counter = 0
         self._sec_counters = [0, 0, 0, 0]
@@ -118,9 +124,19 @@ class MarkdownToWordConverter:
             Document对象
         """
         # 创建新文档
-        self.doc = Document()
+        if self.template_path and os.path.exists(self.template_path):
+            try:
+                self.doc = Document(self.template_path)
+            except Exception:
+                self.doc = Document()
+        else:
+            self.doc = Document()
         setup_document_styles(self.doc, style=self.style, page_size=self.page_size, style_overrides=self.export_style)
 
+        # 应用页眉页脚配置
+        if self.header_footer_config:
+            self._apply_header_footer()
+            
         # 是否打开时自动更新字段（目录/编号等）
         try:
             self._set_update_fields_on_open(bool(self.export_style.get('update_fields_on_open', True)))
@@ -175,11 +191,14 @@ class MarkdownToWordConverter:
                 raise ConversionError(
                     f"在第{start_line}行附近处理 {block_type} 失败: {e}" + (f"\n内容片段: {snippet}" if snippet else "")
                 ) from e
-        
+        # 原生脚注已在 _add_inline_content 中通过 _add_native_footnote 处理
+        # 无需额外渲染步骤
+            
         return self.doc
 
     def _prescan_blocks_for_refs(self, blocks: list) -> None:
-        """预扫描 blocks：为 {#id} 分配书签名与显示标签，支持前向引用。"""
+        """预扫描 blocks：为 {#id} 分配书签名与显示标签，支持前向引用。
+        同时预先收集所有脚注定义，以便在后续处理中使用。"""
         try:
             self._fig_counter = 0
             self._tbl_counter = 0
@@ -193,6 +212,15 @@ class MarkdownToWordConverter:
                 c = blk.get('content')
                 anchor = None
                 level = None
+
+                # 预先收集脚注定义
+                if t == 'footnote_def':
+                    if isinstance(c, dict):
+                        ref = c.get('ref')
+                        text = c.get('text')
+                        if ref:
+                            self.footnotes[ref] = text or ''
+                    continue
 
                 if t and t.startswith('heading_'):
                     level = int(t.split('_')[1])
@@ -442,6 +470,15 @@ class MarkdownToWordConverter:
             # 目录标记 [[TOC]]（单独一行）
             if line.strip() == '[[TOC]]':
                 blocks.append({'type': 'toc', 'content': '', 'start_line': i + 1})
+                i += 1
+                continue
+            
+            # 脚注定义 [^1]: 内容
+            footnote_match = re.match(r'^\s*\[\^([^\]]+)\][:：]\s*(.*)', line.strip())
+            if footnote_match:
+                ref = footnote_match.group(1)
+                content = footnote_match.group(2)
+                blocks.append({'type': 'footnote_def', 'content': {'ref': ref, 'text': content}, 'start_line': i + 1})
                 i += 1
                 continue
             
@@ -733,6 +770,269 @@ class MarkdownToWordConverter:
         
         return ' '.join(para_lines), i
     
+    def _setup_footnotes_part(self):
+        """初始化脚注系统 - 使用延迟 ZIP 注入方式。
+        
+        由于 python-docx 不支持动态添加 footnotes.xml 部件，
+        我们将脚注信息收集起来，在 save() 时通过 ZIP 操作注入。
+        """
+        # 如果已初始化则跳过
+        if hasattr(self, '_footnotes_initialized') and self._footnotes_initialized:
+            return
+        
+        self._footnote_id_counter = 2  # 从 2 开始（0 和 1 被保留）
+        self._footnote_ref_to_id = {}  # 映射 Markdown 引用 ID 到 Word 脚注 ID
+        self._pending_footnotes = []  # 待注入的脚注内容列表
+        self._footnotes_initialized = True
+    
+    def _add_native_footnote(self, paragraph, ref_id: str, content: str):
+        """向段落中插入原生 Word 脚注引用。
+        
+        实际的脚注内容会在文档保存时通过 ZIP 注入。
+        """
+        # 确保脚注系统已初始化
+        self._setup_footnotes_part()
+        
+        # 分配一个 Word 脚注 ID
+        if ref_id not in self._footnote_ref_to_id:
+            fn_id = str(self._footnote_id_counter)
+            self._footnote_id_counter += 1
+            self._footnote_ref_to_id[ref_id] = fn_id
+            
+            # 记录待注入的脚注
+            self._pending_footnotes.append({
+                'id': fn_id,
+                'content': content or ''
+            })
+        else:
+            fn_id = self._footnote_ref_to_id[ref_id]
+        
+        # 在正文段落中插入脚注引用
+        run = paragraph.add_run()
+        run._r.append(self._create_footnote_reference_element(fn_id))
+    
+    def _create_footnote_reference_element(self, fn_id: str):
+        """创建 w:footnoteReference 元素"""
+        footnote_ref = OxmlElement('w:footnoteReference')
+        footnote_ref.set(qn('w:id'), fn_id)
+        return footnote_ref
+    
+    def _inject_footnotes_into_docx(self, docx_path: str):
+        """在保存后的 docx 文件中注入 footnotes.xml。
+        
+        这是一个 ZIP 操作，直接修改 docx 文件内容。
+        """
+        import zipfile
+        import tempfile
+        import shutil
+        from lxml import etree
+        
+        if not hasattr(self, '_pending_footnotes') or not self._pending_footnotes:
+            return
+        
+        # 创建 footnotes.xml 内容
+        nsmap = {
+            'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+            'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+        }
+        w = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+        
+        footnotes_root = etree.Element(f'{w}footnotes', nsmap=nsmap)
+        
+        # 分隔符脚注 (id=0)
+        fn_sep = etree.SubElement(footnotes_root, f'{w}footnote', {f'{w}type': 'separator', f'{w}id': '0'})
+        p_sep = etree.SubElement(fn_sep, f'{w}p')
+        r_sep = etree.SubElement(p_sep, f'{w}r')
+        etree.SubElement(r_sep, f'{w}separator')
+        
+        # 续页分隔符脚注 (id=1)
+        fn_cont = etree.SubElement(footnotes_root, f'{w}footnote', {f'{w}type': 'continuationSeparator', f'{w}id': '1'})
+        p_cont = etree.SubElement(fn_cont, f'{w}p')
+        r_cont = etree.SubElement(p_cont, f'{w}r')
+        etree.SubElement(r_cont, f'{w}continuationSeparator')
+        
+        # 添加实际脚注
+        for fn in self._pending_footnotes:
+            fn_elem = etree.SubElement(footnotes_root, f'{w}footnote', {f'{w}id': fn['id']})
+            p_elem = etree.SubElement(fn_elem, f'{w}p')
+            
+            # 脚注引用标记
+            r_ref = etree.SubElement(p_elem, f'{w}r')
+            rPr_ref = etree.SubElement(r_ref, f'{w}rPr')
+            etree.SubElement(rPr_ref, f'{w}rStyle', {f'{w}val': 'FootnoteReference'})
+            etree.SubElement(r_ref, f'{w}footnoteRef')
+            
+            # 空格
+            r_space = etree.SubElement(p_elem, f'{w}r')
+            t_space = etree.SubElement(r_space, f'{w}t')
+            t_space.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+            t_space.text = ' '
+            
+            # 脚注内容
+            r_text = etree.SubElement(p_elem, f'{w}r')
+            t_text = etree.SubElement(r_text, f'{w}t')
+            t_text.text = fn['content']
+        
+        footnotes_xml = etree.tostring(footnotes_root, xml_declaration=True, encoding='UTF-8', standalone='yes')
+        
+        # 读取并修改 docx (ZIP)
+        temp_path = docx_path + '.tmp'
+        
+        with zipfile.ZipFile(docx_path, 'r') as zin:
+            with zipfile.ZipFile(temp_path, 'w', zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    data = zin.read(item.filename)
+                    
+                    # 更新 [Content_Types].xml
+                    if item.filename == '[Content_Types].xml':
+                        data = self._update_content_types(data)
+                    
+                    # 更新 word/_rels/document.xml.rels
+                    elif item.filename == 'word/_rels/document.xml.rels':
+                        data = self._update_document_rels(data)
+                    
+                    zout.writestr(item, data)
+                
+                # 添加 footnotes.xml
+                zout.writestr('word/footnotes.xml', footnotes_xml)
+        
+        # 替换原文件
+        shutil.move(temp_path, docx_path)
+    
+    def _update_content_types(self, data: bytes) -> bytes:
+        """更新 [Content_Types].xml 以包含 footnotes.xml"""
+        from lxml import etree
+        
+        root = etree.fromstring(data)
+        ns = '{http://schemas.openxmlformats.org/package/2006/content-types}'
+        
+        # 检查是否已存在
+        for override in root.findall(f'{ns}Override'):
+            if override.get('PartName') == '/word/footnotes.xml':
+                return data
+        
+        # 添加 Override
+        override = etree.SubElement(root, f'{ns}Override')
+        override.set('PartName', '/word/footnotes.xml')
+        override.set('ContentType', 'application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml')
+        
+        return etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone='yes')
+    
+    def _update_document_rels(self, data: bytes) -> bytes:
+        """更新 word/_rels/document.xml.rels 以引用 footnotes.xml"""
+        from lxml import etree
+        
+        root = etree.fromstring(data)
+        ns = '{http://schemas.openxmlformats.org/package/2006/relationships}'
+        
+        # 检查是否已存在
+        for rel in root.findall(f'{ns}Relationship'):
+            if rel.get('Target') == 'footnotes.xml':
+                return data
+        
+        # 找到最大 rId
+        max_id = 0
+        for rel in root.findall(f'{ns}Relationship'):
+            rid = rel.get('Id', '')
+            if rid.startswith('rId'):
+                try:
+                    num = int(rid[3:])
+                    max_id = max(max_id, num)
+                except ValueError:
+                    pass
+        
+        # 添加 Relationship
+        rel = etree.SubElement(root, f'{ns}Relationship')
+        rel.set('Id', f'rId{max_id + 1}')
+        rel.set('Type', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes')
+        rel.set('Target', 'footnotes.xml')
+        
+        return etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone='yes')
+
+
+
+    def _apply_header_footer(self):
+        """应用页眉页脚配置"""
+        config = self.header_footer_config
+        if not config:
+            return
+            
+        section = self.doc.sections[0]
+        
+        # 页眉
+        if config.get('header_text') or config.get('show_date'):
+            header = section.header
+            # 清除已有内容
+            for paragraph in header.paragraphs:
+                p = paragraph._element
+                p.getparent().remove(p)
+                
+            p = header.add_paragraph()
+            text_parts = []
+            if config.get('header_text'):
+                text_parts.append(config.get('header_text'))
+            if config.get('show_date'):
+                import datetime
+                text_parts.append(datetime.datetime.now().strftime("%Y-%m-%d"))
+                
+            p.text = " | ".join(text_parts)
+            
+            align = config.get('header_align', 'center')
+            if align == 'left':
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            elif align == 'right':
+                p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            else:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+        # 页脚
+        if config.get('footer_text') or config.get('show_page_num'):
+            footer = section.footer
+            # 清除已有内容
+            for paragraph in footer.paragraphs:
+                p = paragraph._element
+                p.getparent().remove(p)
+                
+            p = footer.add_paragraph()
+            
+            # 页码处理比较复杂，这里简化处理，只添加文本
+            text_parts = []
+            if config.get('footer_text'):
+                text_parts.append(config.get('footer_text'))
+                
+            p.text = " ".join(text_parts)
+            
+            # 如果需要显示页码
+            if config.get('show_page_num'):
+                if p.text:
+                    run = p.add_run("  ")
+                self._add_page_number(p)
+            
+            align = config.get('footer_align', 'center')
+            if align == 'left':
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            elif align == 'right':
+                p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            else:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    def _add_page_number(self, paragraph):
+        """向段落添加页码字段"""
+        run = paragraph.add_run()
+        fldChar1 = OxmlElement('w:fldChar')
+        fldChar1.set(qn('w:fldCharType'), 'begin')
+        
+        instrText = OxmlElement('w:instrText')
+        instrText.set(qn('xml:space'), 'preserve')
+        instrText.text = "PAGE"
+        
+        fldChar2 = OxmlElement('w:fldChar')
+        fldChar2.set(qn('w:fldCharType'), 'end')
+        
+        run._r.append(fldChar1)
+        run._r.append(instrText)
+        run._r.append(fldChar2)
+    
     def _process_block(self, block_type: str, content) -> None:
         """处理单个块"""
         
@@ -744,6 +1044,31 @@ class MarkdownToWordConverter:
         
         elif block_type == 'paragraph':
             self._add_paragraph(content)
+        
+        elif block_type == 'image':
+            anchor = content.get('anchor') if isinstance(content, dict) else None
+            alt_text, image_path = (content.get('text') if isinstance(content, dict) else content)
+            ok = self.image_handler.add_image(self.doc, image_path, alt_text)
+
+            # 给图片添加书签（用于引用）
+            if anchor:
+                try:
+                    # 图片插入时会创建一个居中段落，取最后一个段落作为锚点
+                    p = self.doc.paragraphs[-1] if self.doc.paragraphs else None
+                    if p is not None:
+                        self._add_bookmark_to_paragraph(p, anchor)
+                        self._make_label_for_anchor(anchor, 'image')
+                except Exception:
+                    pass
+            
+        elif block_type == 'footnote_def':
+            # 脚注定义，暂存不直接渲染
+            # content 现在是一个字典 {'ref': ..., 'text': ...}
+            if isinstance(content, dict):
+                ref = content.get('ref')
+                text = content.get('text')
+                if ref:
+                    self.footnotes[ref] = text
         
         elif block_type == 'code':
             self.code_handler.add_code_block(
@@ -1301,21 +1626,35 @@ class MarkdownToWordConverter:
                     run.italic = True
             
             elif elem.type == InlineType.SUPERSCRIPT:
-                run = paragraph.add_run(elem.content)
+                # 上标
+                run = paragraph.add_run(elem.content or '')
                 run.font.superscript = True
-                if base_bold:
-                    run.bold = True
-                if base_italic:
-                    run.italic = True
-            
+                if base_bold: run.bold = True
+                if base_italic: run.italic = True
+                self._set_body_font(run, keep_style=True)
+                
             elif elem.type == InlineType.SUBSCRIPT:
-                run = paragraph.add_run(elem.content)
+                # 下标
+                run = paragraph.add_run(elem.content or '')
                 run.font.subscript = True
-                if base_bold:
-                    run.bold = True
-                if base_italic:
-                    run.italic = True
-            
+                if base_bold: run.bold = True
+                if base_italic: run.italic = True
+                self._set_body_font(run, keep_style=True)
+
+            elif elem.type == InlineType.FOOTNOTE_REF:
+                # 脚注引用：使用原生 Word 脚注
+                ref_id = elem.content
+                # 查找对应的脚注内容
+                fn_content = self.footnotes.get(ref_id, '')
+                if fn_content or ref_id in self.footnotes:
+                    self._add_native_footnote(paragraph, ref_id, fn_content)
+                else:
+                    # 如果定义尚未出现，先占位，稍后在 convert_text 中填充
+                    # 暂时插入普通文本标记，之后处理
+                    run = paragraph.add_run(f"[^{ref_id}]")
+                    run.font.superscript = True
+                    run.font.size = Pt(9)
+
             elif elem.type == InlineType.LINEBREAK:
                 # 换行
                 paragraph.add_run('\n')
@@ -1418,4 +1757,10 @@ class MarkdownToWordConverter:
         """保存文档"""
         if self.doc:
             self.doc.save(output_path)
+            # 注入脚注（如果有）
+            try:
+                self._inject_footnotes_into_docx(output_path)
+            except Exception as e:
+                print(f"脚注注入失败: {e}")
             print(f"文档已保存: {output_path}")
+
