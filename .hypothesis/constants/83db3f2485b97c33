@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\batch_export.py
+# hypothesis_version: 6.148.8
+
+[100, 120, 250, 400, 550, 700, '*.*', '*.md *.markdown', '...', '.docx', '.markdown', '.md', '.pdf', '1.0', '700x550', 'Markdown文件', 'PDF', 'PDF导出功能不可用', 'WM_DELETE_WINDOW', 'Word', 'both', 'darkgreen', 'darkred', 'disabled', 'docx', 'e', 'exporting', 'failed', 'green', 'left', 'lightgreen', 'normal', 'orange', 'pdf', 'pdf_export_feature', 'pending', 'r', 'red', 'right', 'success', 'transparent', 'utf-8', 'w', 'x', 'yellow', '⏳', '⏹ 停止', '○', '✓', '✗', '与源文件相同目录', '已停止导出', '所有文件', '提示', '格式:', '请先选择要导出的文件', '请选择要导出的文件', '输出目录:', '选择 Markdown 文件', '选择包含 Markdown 文件的文件夹', '选择输出目录', '📁 选择文件', '📂 选择文件夹', '📤 批量导出', '🗑️ 清空', '🚀 开始导出']

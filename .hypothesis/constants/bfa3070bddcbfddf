@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\word_to_markdown.py
+# hypothesis_version: 6.148.8
+
+[' |', ' | ', '*.*', '*.docx', '*.md', '---', '.md', '1.0', 'Code', 'Consolas', 'Courier', 'Heading', 'Markdown文件', 'Quote', 'Word文档', 'end', 'r', 'utf-8', 'w', '|', '| ', '✅ Word转Markdown成功', '❌ 转换失败', '保存Markdown文件', '所有文件', '正在转换Word文档...', '转换失败！', '转换成功', '选择Word文件', '错误']

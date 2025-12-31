@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\collaboration\server.py
+# hypothesis_version: 6.148.8
+
+[0.0, 8765, '#45B7D1', '#4ECDC4', '#96CEB4', '#98D8C8', '#DDA0DD', '#F7DC6F', '#FF6B6B', '#FFEAA7', '0.0.0.0', 'Anonymous', 'author', 'color', 'comment', 'crdt_state', 'created_at', 'cursor_position', 'cursor_update', 'document', 'edit', 'error', 'host_id', 'id', 'is_online', 'join', 'join_success', 'kick', 'kicked', 'leave', 'message', 'name', 'operation', 'participant_count', 'participant_id', 'participants', 'password', 'permission', 'position', 'presence_update', 'selection', 'session_code', 'session_id', 'sync_request', 'sync_response', 'target_id', 'type', 'view', 'websockets 库未安装', '会话不存在', '密码错误', '您已被主持人移出会话', '需要密码']

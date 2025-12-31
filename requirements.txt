@@ -6,3 +6,19 @@ lxml>=4.9.0
 latex2mathml>=3.0.0
 customtkinter>=5.2.0
 pywin32>=306
+
+# OCR 图片转 Markdown
+paddlepaddle>=2.5.0
+paddleocr>=2.7.0
+pix2tex>=0.1.0
+
+# Markdown 数据库
+watchdog>=3.0.0
+whoosh>=2.7.4
+pyyaml>=6.0
+networkx>=3.0
+
+# 实时协作
+websockets>=11.0
+darkdetect>=0.8.0
+cryptography>=41.0.0

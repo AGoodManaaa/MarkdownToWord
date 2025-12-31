@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\bibliography.py
+# hypothesis_version: 6.148.8
+
+[100, 120, 150, 400, 600, 800, '\n\n## 参考文献\n', '*.*', '*.bib', ', ', '.', '. ', '..', '1.0', '2024', '500x500', '800x600', 'APA (美国心理学会)', 'BibTeX文件', 'DOI', 'GB/T 7714 (中国国标)', '\\[@([^\\]]+)\\]', '_textbox', 'abstract', 'apa', 'article', 'author', 'bibliography.json', 'bold', 'booktitle', 'both', 'darkgreen', 'darkred', 'doi', 'end', 'end-1c', 'example2024', 'gb', 'gray20', 'gray50', 'gray70', 'gray90', 'green', 'input_text', 'insert', 'journal', 'key', 'left', 'pages', 'publisher', 'r', 'red', 'right', 'simple', 'title', 'transparent', 'url', 'utf-8', 'volume', 'w', 'x', 'year', '➕ 手动添加', '作者', '保存', '出版社', '卷号', '年份', '引用键 (必填)', '成功', '所有文件', '提示', '文档中没有找到引用 [@key]', '期刊', '标题', '格式:', '添加文献', '确认', '简单格式', '警告', '请输入引用键', '选择 BibTeX 文件', '错误', '页码', '📋', '📋 生成参考文献', '📑 文献引用管理', '📥 导入 BibTeX', '🗑️']

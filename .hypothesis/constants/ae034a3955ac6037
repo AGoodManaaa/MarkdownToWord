@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\collaboration\client.py
+# hypothesis_version: 6.148.8
+
+['comment', 'content', 'cursor_update', 'document', 'init', 'join', 'join_success', 'kicked', 'leave', 'message', 'name', 'operation', 'participant_id', 'participants', 'password', 'position', 'presence_update', 'selection', 'session_code', 'session_id', 'thread_id', 'type', 'websockets 库未安装', '连接失败']

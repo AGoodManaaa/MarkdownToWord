@@ -1212,3 +1212,59 @@ class MarkdownPreview(ctk.CTkFrame):
             enabled: 是否启用
         """
         self._sync_scroll_enabled = enabled
+    
+    def apply_theme(self, theme_config: dict):
+        """应用预览主题
+        
+        Args:
+            theme_config: 主题配置字典，来自 PreviewTheme.to_tkinter_config()
+        """
+        try:
+            # 更新背景色
+            bg = theme_config.get('background', '#FFFFFF')
+            fg = theme_config.get('text_color', '#111827')
+            self.text.configure(bg=bg, fg=fg)
+            
+            # 更新字体
+            font_family = theme_config.get('font_family', '宋体')
+            font_size = theme_config.get('font_size', 16)
+            self.text.configure(font=(font_family, font_size))
+            
+            # 更新标签样式
+            h1_color = theme_config.get('h1_color', '#1f2937')
+            h1_size = theme_config.get('h1_size', 28)
+            self.text.tag_configure('h1', foreground=h1_color, font=('黑体', h1_size, 'bold'))
+            
+            h2_color = theme_config.get('h2_color', '#374151')
+            h2_size = theme_config.get('h2_size', 22)
+            self.text.tag_configure('h2', foreground=h2_color, font=('黑体', h2_size, 'bold'))
+            
+            h3_color = theme_config.get('h3_color', '#4b5563')
+            h3_size = theme_config.get('h3_size', 18)
+            self.text.tag_configure('h3', foreground=h3_color, font=('黑体', h3_size, 'bold'))
+            
+            h4_color = theme_config.get('h4_color', '#6b7280')
+            h4_size = theme_config.get('h4_size', 16)
+            self.text.tag_configure('h4', foreground=h4_color, font=('黑体', h4_size, 'bold'))
+            
+            # 链接颜色
+            link_color = theme_config.get('link_color', '#0000FF')
+            self.text.tag_configure('link', foreground=link_color)
+            
+            # 代码样式
+            code_bg = theme_config.get('code_bg', '#F5F5F5')
+            code_color = theme_config.get('code_color', '#1F2937')
+            code_font = theme_config.get('code_font', 'Consolas')
+            self.text.tag_configure('code', background=code_bg, foreground=code_color, font=(code_font, 10))
+            
+            code_block_bg = theme_config.get('code_block_bg', '#FAFAFA')
+            code_block_color = theme_config.get('code_block_color', '#1F2937')
+            self.text.tag_configure('code_block', background=code_block_bg, foreground=code_block_color, font=(code_font, 10))
+            
+            # 引用样式
+            blockquote_bg = theme_config.get('blockquote_bg', '#f9fafb')
+            blockquote_color = theme_config.get('blockquote_color', '#6B7280')
+            self.text.tag_configure('quote', background=blockquote_bg, foreground=blockquote_color)
+            
+        except Exception as e:
+            print(f"应用预览主题失败: {e}")
