@@ -37,29 +37,51 @@ COLORS_LIGHT = {
     'preview_bg': '#FFFFFF',
 }
 
-# 暗色主题颜色
-# 暗色主题颜色 (Premium Dark)
+# Premium Dark 主题 - 灵感来自 Notion/Obsidian/VS Code
 COLORS_DARK = {
-    'primary': '#60A5FA',       # Blue 400 - 更明亮现代的主色
-    'primary_hover': '#3B82F6', # Blue 500
-    'secondary': '#F472B6',     # Pink 400
-    'success': '#34D399',       # Emerald 400
-    'warning': '#FBBF24',       # Amber 400
-    'danger': '#F87171',        # Red 400
-    'bg_light': '#18181B',      # Zinc 950 - 深邃背景
-    'bg_card': '#27272A',       # Zinc 800 - 卡片背景
-    'bg_sidebar': '#27272A',    # Zinc 800 - 侧边栏
-    'text_primary': '#F4F4F5',  # Zinc 100 - 主要文字
-    'text_secondary': '#A1A1AA',# Zinc 400 - 次要文字
-    'text_muted': '#71717A',    # Zinc 500 - 弱化文字
-    'border': '#3F3F46',        # Zinc 700 - 边框
-    'border_focus': '#60A5FA',  # Blue 400
-    'line_number': '#71717A',
-    'line_number_bg': '#18181B',
-    'highlight': '#1E3A8A',     # Blue 900
-    'shadow': '#000000',
-    'editor_bg': '#18181B',
-    'preview_bg': '#27272A',
+    # 主色调 - Indigo 系列
+    'primary': '#818CF8',           # Indigo 400 - 柔和的主色
+    'primary_hover': '#6366F1',     # Indigo 500
+    'primary_subtle': '#312E81',    # Indigo 900 - 用于背景高亮
+    
+    # 辅助色
+    'secondary': '#F472B6',         # Pink 400
+    'success': '#34D399',           # Emerald 400
+    'warning': '#FBBF24',           # Amber 400
+    'danger': '#F87171',            # Red 400
+    'info': '#38BDF8',              # Sky 400
+    
+    # 背景层级 (由深到浅)
+    'bg_base': '#09090B',           # Zinc 950 - 最深层（窗口背景）
+    'bg_light': '#0F0F12',          # 略浅一层
+    'bg_surface': '#18181B',        # Zinc 900 - 内容区
+    'bg_card': '#1C1C1F',           # 卡片背景
+    'bg_elevated': '#27272A',       # Zinc 800 - 悬浮/弹窗
+    'bg_sidebar': '#18181B',        # 侧边栏
+    
+    # 文字
+    'text_primary': '#FAFAFA',      # Zinc 50 - 主要文字
+    'text_secondary': '#A1A1AA',    # Zinc 400 - 次要文字
+    'text_muted': '#71717A',        # Zinc 500 - 弱化文字
+    'text_disabled': '#52525B',     # Zinc 600
+    
+    # 边框
+    'border': '#27272A',            # Zinc 800 - 默认边框
+    'border_subtle': '#3F3F46',     # Zinc 700 - 明显边框
+    'border_focus': '#818CF8',      # Indigo 400 - 焦点边框
+    
+    # 编辑器专用
+    'line_number': '#52525B',       # Zinc 600
+    'line_number_bg': '#0F0F12',
+    'editor_bg': '#0F0F12',
+    'preview_bg': '#18181B',
+    'highlight': '#312E81',         # Indigo 900 - 高亮行
+    'selection': '#3730A3',         # Indigo 800 - 选中
+    
+    # 特效
+    'shadow': 'rgba(0, 0, 0, 0.5)',
+    'glow': 'rgba(129, 140, 248, 0.2)',  # Indigo 发光
+    'overlay': 'rgba(0, 0, 0, 0.6)',     # 遮罩层
 }
 
 # 当前主题颜色（通过清空+更新的方式在原地修改，供其他模块共享）

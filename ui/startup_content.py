@@ -12,7 +12,7 @@ def insert_example_if_empty_for_app(app) -> None:
     except Exception:
         pass
 
-    example = """# 欢迎使用 Markdown 转换器 
+    example = """# 欢迎使用 Markdown 转换器 ✨
 
 ## 核心功能
 
@@ -44,13 +44,18 @@ def insert_example_if_empty_for_app(app) -> None:
 - ✅ 亮/暗主题切换
 - ✅ 窗口位置记忆
 - ✅ 最近文件列表
-
-
-### Phase 2 新增功能 (New!)
 - 🎨 **主题编辑器**: 自定义界面颜色，打造个性化外观
 - 📄 **Word模板库**: 导入 .docx 模板，一键生成红头文件/企业文档
 - 📝 **页眉页脚**: 自定义页眉文字、日期及页码
 - 📎 **脚注支持**: 自动解析 `[^1]` 并生成尾注
+
+> 全新的视觉体验，让写作更加愉悦！
+
+- 🎨 **Premium Dark 主题**: Indigo/Zinc 配色，更现代、更护眼
+- 🖼️ **Tabler 图标库**: 62 个精美 SVG 矢量图标
+- ✨ **动画效果**: 悬停放大、发光边框、脉冲指示器
+- 🎭 **主题管理器**: 一键切换预设主题
+
 
 ## 数学公式示例
 
