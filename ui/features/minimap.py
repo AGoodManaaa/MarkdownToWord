@@ -65,9 +65,9 @@ class Minimap:
         
         # 可见区域指示器
         self._viewport_rect = None
-        self._viewport_color = '#10b98130'  # 半透明绿色
+        self._viewport_color = '#a7f3d0'  # 浅绿色（Tkinter不支持透明度）
         self._viewport_border = '#10b981'
-        self._hover_color = '#10b98150'  # 悬停时更明显
+        self._hover_color = '#6ee7b7'  # 悬停时更明显
         
         # 鼠标悬停状态
         self._is_hovering = False

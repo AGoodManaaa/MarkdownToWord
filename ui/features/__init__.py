@@ -51,6 +51,7 @@ from .mindmap import MindmapFeature
 from .bibliography import BibliographyFeature
 from .version_control import VersionControlFeature
 from .autocomplete import AutocompleteFeature
+from .html_export import HTMLExportFeature
 
 # Phase 5 新增功能 - OCR、数据库、协作
 from .ocr import OCRFeature, OCRDialog, ImageInputManager, OCREngine, MarkdownGenerator
