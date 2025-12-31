@@ -45,6 +45,14 @@ def build():
     # 添加 templates 目录 (如果存在)
     if os.path.exists('templates'):
         args.append('--add-data=templates;templates')
+    
+    # 添加 assets/icons 目录 (SVG 图标)
+    if os.path.exists('assets'):
+        args.append('--add-data=assets;assets')
+    
+    # 添加 ui/themes 目录 (主题文件)
+    if os.path.exists('ui/themes'):
+        args.append('--add-data=ui/themes;ui/themes')
 
     print("开始构建...")
     PyInstaller.__main__.run(args)

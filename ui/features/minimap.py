@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 迷你地图模块 - VS Code 风格文档缩略图导航
-真实缩小版：内容按比例缩放显示
+真实缩小版：内容按比例缩放显示，视口精确跟踪
 """
 
 import tkinter as tk
@@ -13,23 +13,21 @@ class Minimap:
     迷你地图 - 文档的真实缩小版
     
     特点：
-    1. 内容按比例缩放，不是固定高度
+    1. 内容按比例缩放，真实反映文档结构
     2. 视口指示器精确反映可见区域
     3. 无残影的平滑滚动
+    4. VS Code 风格的交互体验
     """
     
     def __init__(self, text_widget, parent=None):
         self.text_widget = text_widget
         self._enabled = True
         self._visible = False
-        self._width = 80
-        self._update_delay = 50
+        self._width = 100
+        self._update_delay = 30
         self._update_id = None
+        self._viewport_update_id = None
         
-        # 缩放比例（文档高度 -> 迷你地图高度）
-        self._scale = 0.15  # 15% 缩放
-        
-        # 获取底层 Text 组件
         if hasattr(text_widget, '_textbox'):
             self._text = text_widget._textbox
         else:
@@ -37,14 +35,12 @@ class Minimap:
         
         self._parent = parent or self._text.master
         
-        # 颜色配置 - VS Code 风格
-        self._bg_color = '#f8fafc'
-        self._bg_hover = '#f1f5f9'
-        self._viewport_color = '#cce4ff'  # 浅蓝色
-        self._viewport_border = '#80bfff'  # 蓝色边框
-        self._viewport_hover = '#b3d9ff'
+        # VS Code 风格颜色
+        self._bg_color = '#f5f5f5'
+        self._viewport_fill = '#d0d0d0'
+        self._viewport_border = '#a0a0a0'
+        self._viewport_hover = '#c0c0c0'
         
-        # 创建容器
         self._container = tk.Frame(
             self._parent,
             width=self._width,
@@ -52,7 +48,6 @@ class Minimap:
             highlightthickness=0,
         )
         
-        # 创建画布
         self.canvas = tk.Canvas(
             self._container,
             width=self._width,
@@ -62,24 +57,22 @@ class Minimap:
             bd=0,
         )
         self.canvas.pack(fill='both', expand=True)
-        
-        # 分隔线
+
         self._separator = tk.Frame(
             self._container,
             width=1,
-            bg='#e2e8f0',
+            bg='#e0e0e0',
         )
         
-        # 状态
         self._is_hovering = False
         self._is_dragging = False
-        self._drag_offset = 0  # 拖动时鼠标相对视口顶部的偏移
+        self._drag_offset = 0
         
-        # 缓存
         self._total_lines = 0
         self._canvas_height = 0
-        self._content_height = 0  # 缩放后的内容总高度
-        self._line_height = 2  # 每行在迷你地图中的高度
+        self._line_height = 2
+        self._content_height = 0
+        self._last_yview = (0, 1)
         
         self._bind_events()
     
@@ -87,10 +80,10 @@ class Minimap:
         """绑定事件"""
         self._text.bind('<KeyRelease>', self._schedule_update, add='+')
         self._text.bind('<<Modified>>', self._on_modified, add='+')
+        self._text.bind('<Configure>', self._schedule_update, add='+')
         self._text.bind('<MouseWheel>', self._on_scroll, add='+')
         self._text.bind('<Button-4>', self._on_scroll, add='+')
         self._text.bind('<Button-5>', self._on_scroll, add='+')
-        self._text.bind('<Configure>', self._schedule_update, add='+')
         
         self.canvas.bind('<Button-1>', self._on_click)
         self.canvas.bind('<B1-Motion>', self._on_drag)
@@ -98,6 +91,7 @@ class Minimap:
         self.canvas.bind('<Enter>', self._on_enter)
         self.canvas.bind('<Leave>', self._on_leave)
         self.canvas.bind('<MouseWheel>', self._on_minimap_scroll)
+        self.canvas.bind('<Configure>', self._on_canvas_configure)
     
     def _on_modified(self, event=None):
         try:
@@ -108,35 +102,41 @@ class Minimap:
             pass
     
     def _on_scroll(self, event=None):
-        # 直接更新视口，不重绘内容
-        self.canvas.after_idle(self._update_viewport_only)
+        self._schedule_viewport_update()
     
     def _on_minimap_scroll(self, event):
         if event.delta > 0:
             self._text.yview_scroll(-3, 'units')
         else:
             self._text.yview_scroll(3, 'units')
-        self._update_viewport_only()
+        self._schedule_viewport_update()
         return 'break'
+    
+    def _on_canvas_configure(self, event=None):
+        self._schedule_update()
     
     def _schedule_update(self, event=None):
         if self._update_id:
             self.canvas.after_cancel(self._update_id)
-        self._update_id = self.canvas.after(self._update_delay, self._update)
+        self._update_id = self.canvas.after(self._update_delay, self._full_update)
     
-    def _update(self):
-        """完整更新迷你地图（内容+视口）"""
+    def _schedule_viewport_update(self):
+        if self._viewport_update_id:
+            self.canvas.after_cancel(self._viewport_update_id)
+        self._viewport_update_id = self.canvas.after(10, self._update_viewport)
+    
+    def _full_update(self):
+        self._update_id = None
         if not self._enabled or not self._visible:
             return
         
-        # 清除所有内容
         self.canvas.delete("all")
         
         try:
             content = self._text.get("1.0", "end-1c")
         except:
             return
-            
+        
         lines = content.split('\n')
         self._total_lines = len(lines)
         
@@ -147,178 +147,160 @@ class Minimap:
         if self._canvas_height <= 1:
             self._canvas_height = 400
         
-        # 计算缩放后的内容高度
-        # 每行固定高度，内容总高度 = 行数 * 行高
-        self._line_height = 2  # 每行2像素
         self._content_height = self._total_lines * self._line_height
-        
-        # 绘制内容
+        self._draw_content(lines)
+        self._draw_viewport()
+    
+    def _draw_content(self, lines):
         y = 0
-        for i, line in enumerate(lines):
+        for line in lines:
             color, width = self._get_line_style(line)
-            
             if width > 0:
                 self.canvas.create_rectangle(
-                    4, y, 
+                    4, y,
                     4 + min(width, self._width - 8), y + self._line_height - 1,
-                    fill=color, 
+                    fill=color,
                     outline='',
                     tags='content'
                 )
-            
             y += self._line_height
-        
-        # 绘制视口
-        self._draw_viewport()
     
-    def _update_viewport_only(self):
-        """只更新视口位置（不重绘内容）"""
+    def _update_viewport(self):
+        self._viewport_update_id = None
         if not self._enabled or not self._visible:
             return
-        
-        # 删除旧视口
         self.canvas.delete('viewport')
-        # 绘制新视口
         self._draw_viewport()
-    
+
     def _draw_viewport(self):
-        """绘制视口指示器"""
         if self._total_lines == 0 or self._content_height == 0:
             return
         
         try:
             yview = self._text.yview()
+            self._last_yview = yview
+            
             top_ratio = yview[0]
             bottom_ratio = yview[1]
             
-            # 视口在内容中的位置
             y1 = top_ratio * self._content_height
             y2 = bottom_ratio * self._content_height
             
-            # 最小高度
-            min_height = 15
+            min_height = 20
             if y2 - y1 < min_height:
                 center = (y1 + y2) / 2
                 y1 = center - min_height / 2
                 y2 = center + min_height / 2
             
-            # 边界检查
             y1 = max(0, y1)
             y2 = min(self._content_height, y2)
             
-            # 颜色
-            fill = self._viewport_hover if (self._is_hovering or self._is_dragging) else self._viewport_color
+            if self._is_dragging:
+                fill = self._viewport_hover
+                border = '#808080'
+            elif self._is_hovering:
+                fill = self._viewport_hover
+                border = self._viewport_border
+            else:
+                fill = self._viewport_fill
+                border = self._viewport_border
             
-            # 绘制视口
             self.canvas.create_rectangle(
-                1, y1, 
-                self._width - 1, y2,
+                2, y1,
+                self._width - 2, y2,
                 fill=fill,
-                outline=self._viewport_border,
+                outline=border,
                 width=1,
                 tags='viewport'
             )
             
-            # 视口在底层
             self.canvas.tag_lower('viewport')
-            
         except Exception:
             pass
     
     def _get_line_style(self, line: str) -> tuple:
-        """根据行内容获取样式"""
         stripped = line.strip()
         
         if not stripped:
             return '#e5e7eb', 0
         
-        base_width = min(len(line) * 0.5, self._width - 12)
+        base_width = min(len(line) * 0.6, self._width - 12)
         
         if stripped.startswith('#'):
             level = len(stripped) - len(stripped.lstrip('#'))
-            width = max(20, self._width - 12 - (level - 1) * 5)
-            return '#3b82f6', width
+            width = max(25, self._width - 12 - (level - 1) * 8)
+            return '#4a90d9', width
         
         if stripped.startswith('```'):
-            return '#059669', self._width - 12
+            return '#2d8a56', self._width - 12
         
         if stripped.startswith(('-', '*', '+')) or (len(stripped) > 0 and stripped[0].isdigit() and '.' in stripped[:3]):
-            return '#f59e0b', base_width
+            return '#d97706', base_width
         
         if stripped.startswith('>'):
             return '#6b7280', base_width * 0.9
         
         if stripped.startswith('|'):
-            return '#8b5cf6', self._width - 12
+            return '#7c3aed', self._width - 12
         
         if '[' in stripped and ']' in stripped:
-            return '#06b6d4', base_width
+            return '#0891b2', base_width
         
-        return '#cbd5e1', base_width
+        return '#9ca3af', base_width
     
     def _on_click(self, event):
-        """点击 - 跳转到对应位置"""
         self._is_dragging = True
         
         if self._content_height == 0:
             return
         
-        # 获取当前视口信息
         yview = self._text.yview()
         viewport_height_ratio = yview[1] - yview[0]
         viewport_height_px = viewport_height_ratio * self._content_height
         
-        # 检查是否点击在视口内
         current_top = yview[0] * self._content_height
         current_bottom = yview[1] * self._content_height
         
         if current_top <= event.y <= current_bottom:
-            # 点击在视口内，记录偏移量用于拖动
             self._drag_offset = event.y - current_top
         else:
-            # 点击在视口外，跳转到该位置（视口中心对准点击位置）
             self._drag_offset = viewport_height_px / 2
             target_top = (event.y - self._drag_offset) / self._content_height
             target_top = max(0, min(1 - viewport_height_ratio, target_top))
             self._text.yview_moveto(target_top)
         
-        self._update_viewport_only()
+        self._update_viewport()
     
     def _on_drag(self, event):
-        """拖动 - 视口跟随鼠标"""
         if not self._is_dragging or self._content_height == 0:
             return
         
         yview = self._text.yview()
         viewport_height_ratio = yview[1] - yview[0]
         
-        # 计算新的视口顶部位置
         new_top = (event.y - self._drag_offset) / self._content_height
         new_top = max(0, min(1 - viewport_height_ratio, new_top))
         
         self._text.yview_moveto(new_top)
-        self._update_viewport_only()
+        self._update_viewport()
     
     def _on_release(self, event):
-        """释放鼠标"""
         self._is_dragging = False
-        self._update_viewport_only()
+        self._update_viewport()
     
     def _on_enter(self, event):
         self._is_hovering = True
-        self.canvas.configure(bg=self._bg_hover)
-        self._update_viewport_only()
+        self._update_viewport()
     
     def _on_leave(self, event):
         self._is_hovering = False
         self._is_dragging = False
-        self.canvas.configure(bg=self._bg_color)
-        self._update_viewport_only()
-    
+        self._update_viewport()
+
     def show(self):
         if self._visible:
             return
-            
+        
         self._visible = True
         self._enabled = True
         
@@ -339,7 +321,7 @@ class Minimap:
             anchor='ne'
         )
         
-        self.canvas.after(50, self._update)
+        self.canvas.after(50, self._full_update)
     
     def hide(self):
         self._visible = False
@@ -363,7 +345,7 @@ class Minimap:
         if self._visible:
             self._container.place_configure(width=width)
             self._separator.place_configure(x=-width)
-        self._update()
+        self._full_update()
     
     def refresh(self):
-        self._update()
+        self._full_update()
