@@ -51,6 +51,7 @@ from ui.features import (
     MindmapFeature,
     BibliographyFeature,
     VersionControlFeature,
+    HTMLExportFeature,  # HTML 导出
     # Phase 4 新增功能
     AIAssistantFeature,
     AutocompleteFeature,
@@ -175,6 +176,7 @@ class App(ctk.CTk):
         self.mindmap_feature = MindmapFeature(self)
         self.bibliography_feature = BibliographyFeature(self)
         self.version_control = VersionControlFeature(self)
+        self.html_export_feature = HTMLExportFeature(self)  # HTML 导出
         
         # Phase 4 新增功能
         self.ai_assistant = AIAssistantFeature(self)
@@ -376,6 +378,7 @@ class App(ctk.CTk):
             (get_toolbar_icon("preview"), "预览", self.toggle_preview, "Ctrl+P"),
             (get_toolbar_icon("export"), "导出", self.export_to_word, "Ctrl+Shift+S"),
             (get_toolbar_icon("pdf"), "PDF", self.export_to_pdf, ""),
+            ("🌐", "HTML", self.show_html_export, ""),  # HTML 导出
             (get_toolbar_icon("ocr"), "OCR", self.show_ocr, "Ctrl+Shift+O"),
             (get_toolbar_icon("ai"), "AI助手", self.show_ai_assistant, "Ctrl+I"),
             (get_toolbar_icon("batch"), "批量导出", self.show_batch_export, ""),
@@ -972,6 +975,14 @@ class App(ctk.CTk):
         try:
             if hasattr(self, 'batch_export_feature') and self.batch_export_feature:
                 self.batch_export_feature.show_dialog()
+        except Exception:
+            pass
+    
+    def show_html_export(self):
+        """显示 HTML 导出对话框。"""
+        try:
+            if hasattr(self, 'html_export_feature') and self.html_export_feature:
+                self.html_export_feature.show_dialog()
         except Exception:
             pass
     

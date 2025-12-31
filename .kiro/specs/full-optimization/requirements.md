@@ -155,57 +155,72 @@
 
 ---
 
-## 第三阶段：导出功能增强 (P1)
+## 第三阶段：导出功能增强 (P1) ✅ 已完成
 
-### 需求 3.1 批量导出
+### 需求 3.1 批量导出 ✅ 已完成
 
 **用户故事:** 作为用户，我希望能同时转换多个文件。
 
 **验收标准:**
-1. WHEN 用户选择多个文件 THEN 系统 SHALL 批量转换
-2. WHEN 批量转换中 THE 系统 SHALL 显示进度条
-3. WHEN 转换完成 THEN 系统 SHALL 显示结果摘要
-4. IF 某文件转换失败 THEN 系统 SHALL 继续处理其他文件并报告错误
 
-### 需求 3.2 导出模板
+1. ✅ WHEN 用户选择多个文件 THEN 系统 SHALL 批量转换
+2. ✅ WHEN 批量转换中 THE 系统 SHALL 显示进度条
+3. ✅ WHEN 转换完成 THEN 系统 SHALL 显示结果摘要
+4. ✅ IF 某文件转换失败 THEN 系统 SHALL 继续处理其他文件并报告错误
+
+**实现文件:** `ui/features/batch_export.py`
+
+### 需求 3.2 导出模板 ✅ 已完成
 
 **用户故事:** 作为用户，我希望能使用自定义 Word 模板。
 
 **验收标准:**
-1. WHEN 用户导入模板 THEN 系统 SHALL 保存模板到模板库
-2. WHEN 用户选择模板 THEN 系统 SHALL 应用模板样式导出
-3. WHEN 用户编辑模板 THEN 系统 SHALL 提供样式编辑界面
-4. WHERE 模板设置 THE 系统 SHALL 支持标题、正文、代码等样式
 
-### 需求 3.3 PDF 直接导出
+1. ✅ WHEN 用户导入模板 THEN 系统 SHALL 保存模板到模板库
+2. ✅ WHEN 用户选择模板 THEN 系统 SHALL 应用模板样式导出
+3. ✅ WHEN 用户编辑模板 THEN 系统 SHALL 提供样式编辑界面
+4. ✅ WHERE 模板设置 THE 系统 SHALL 支持标题、正文、代码等样式
+
+**实现文件:** `ui/features/template_manager.py`, `ui/widgets.py` (ExportStyleSettingsDialog)
+
+### 需求 3.3 PDF 直接导出 ✅ 已完成
 
 **用户故事:** 作为用户，我希望能直接导出 PDF。
 
 **验收标准:**
-1. WHEN 用户选择导出 PDF THEN 系统 SHALL 直接生成 PDF 文件
-2. WHEN 导出 PDF 时 THE 系统 SHALL 保留所有格式
-3. WHEN 导出 PDF 时 THE 系统 SHALL 支持页面设置
-4. WHEN 导出 PDF 时 THE 系统 SHALL 支持添加水印
 
-### 需求 3.4 HTML 导出
+1. ✅ WHEN 用户选择导出 PDF THEN 系统 SHALL 直接生成 PDF 文件
+2. ✅ WHEN 导出 PDF 时 THE 系统 SHALL 保留所有格式
+3. ✅ WHEN 导出 PDF 时 THE 系统 SHALL 支持页面设置
+4. ✅ WHEN 导出 PDF 时 THE 系统 SHALL 支持添加水印
+
+**实现文件:** `ui/features/pdf_export.py`
+
+### 需求 3.4 HTML 导出 ✅ 已完成
 
 **用户故事:** 作为用户，我希望能导出为网页。
 
 **验收标准:**
-1. WHEN 用户选择导出 HTML THEN 系统 SHALL 生成完整 HTML 文件
-2. WHEN 导出 HTML 时 THE 系统 SHALL 内嵌 CSS 样式
-3. WHEN 导出 HTML 时 THE 系统 SHALL 处理图片(内嵌或外链)
-4. WHERE HTML 导出设置 THE 系统 SHALL 支持选择主题
 
-### 需求 3.5 导出历史
+1. ✅ WHEN 用户选择导出 HTML THEN 系统 SHALL 生成完整 HTML 文件
+2. ✅ WHEN 导出 HTML 时 THE 系统 SHALL 内嵌 CSS 样式
+3. ✅ WHEN 导出 HTML 时 THE 系统 SHALL 处理图片(内嵌或外链)
+4. ✅ WHERE HTML 导出设置 THE 系统 SHALL 支持选择主题
+
+**实现文件:** `ui/features/html_export.py`
+
+### 需求 3.5 导出历史 ✅ 已完成
 
 **用户故事:** 作为用户，我希望能查看导出历史。
 
 **验收标准:**
-1. WHEN 用户导出文件 THEN 系统 SHALL 记录导出历史
-2. WHEN 用户查看历史 THEN 系统 SHALL 显示文件名、时间、格式
-3. WHEN 用户点击历史记录 THEN 系统 SHALL 快速重新导出
-4. WHEN 用户清空历史 THEN 系统 SHALL 删除所有记录
+
+1. ✅ WHEN 用户导出文件 THEN 系统 SHALL 记录导出历史
+2. ✅ WHEN 用户查看历史 THEN 系统 SHALL 显示文件名、时间、格式
+3. ✅ WHEN 用户点击历史记录 THEN 系统 SHALL 快速重新导出
+4. ✅ WHEN 用户清空历史 THEN 系统 SHALL 删除所有记录
+
+**实现文件:** `ui/export_history.py`
 
 ---
 
@@ -216,6 +231,7 @@
 **用户故事:** 作为用户，我希望能看到其他人的光标位置。
 
 **验收标准:**
+
 1. WHEN 其他用户编辑 THEN 系统 SHALL 显示其光标位置
 2. WHEN 光标显示时 THE 系统 SHALL 显示用户名标签
 3. WHEN 其他用户选中文本 THEN 系统 SHALL 高亮显示选区
@@ -423,7 +439,7 @@
 |------|------|----------|--------|------|
 | 1 | 核心编辑器增强 | 2-3 周 | P0 | ✅ 已完成 |
 | 2 | 预览增强 | 1-2 周 | P0 | ✅ 已完成 |
-| 3 | 导出功能增强 | 1-2 周 | P1 | 部分完成 |
+| 3 | 导出功能增强 | 1-2 周 | P1 | ✅ 已完成 |
 | 4 | 协作功能完善 | 2 周 | P1 | ✅ 已完成 |
 | 5 | AI 功能增强 | 2-3 周 | P2 | 部分完成 |
 | 6 | 用户体验优化 | 2 周 | P1 | 部分完成 |
@@ -451,6 +467,14 @@
 - ✅ 分屏模式 (`ui/features/split_screen.py`)
 - ✅ 全屏预览 (`ui/features/split_screen.py`)
 - ✅ 打印预览 (`ui/features/split_screen.py`)
+
+### 第三阶段：导出功能增强 ✅
+
+- ✅ 批量导出 (`ui/features/batch_export.py`)
+- ✅ 导出模板 (`ui/features/template_manager.py`)
+- ✅ PDF 直接导出 (`ui/features/pdf_export.py`)
+- ✅ HTML 导出 (`ui/features/html_export.py`)
+- ✅ 导出历史 (`ui/export_history.py`)
 
 ### 第四阶段：协作功能 ✅
 
