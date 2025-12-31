@@ -53,10 +53,21 @@ from ui.features import (
     VersionControlFeature,
     # Phase 4 新增功能
     AIAssistantFeature,
-    TabManagerFeature,
-    PDFExportFeature,
     AutocompleteFeature,
+    # Phase 5 新增功能 - OCR
+    OCRFeature,
+    # Phase 5 新增功能 - 数据库、协作
+    DatabaseFeature,
+    CollaborationFeature,
 )
+# 新增编辑器增强模块
+from ui.features.syntax_highlight import SyntaxHighlighter, HighlightTheme
+from ui.features.smart_editing import SmartEditor
+from ui.features.minimap import Minimap
+from ui.features.preview_themes import preview_theme_manager, PreviewTheme
+from ui.features.code_folding import CodeFolding
+from ui.features.split_screen import SplitScreenManager, FullScreenPreview, PrintPreview, SplitMode
+from ui.icons import TOOLBAR_ICONS, icons, get_toolbar_icon, get_status_icon, get_message_icon
 from ui.export_helpers import (
     export_to_word_for_app,
     show_export_options_for_app,
@@ -167,14 +178,22 @@ class App(ctk.CTk):
         
         # Phase 4 新增功能
         self.ai_assistant = AIAssistantFeature(self)
-        self.tab_manager = TabManagerFeature(self)
-        self.pdf_export_feature = PDFExportFeature(self)
+        
+        # Phase 5 新增功能 - OCR
+        self.ocr_feature = OCRFeature(self)
+        
+        # Phase 5 新增功能 - 数据库、协作
+        self.database_feature = DatabaseFeature(self)
+        self.collaboration_feature = CollaborationFeature(self)
         
         # 初始化 UI
         self._init_ui()
         
         # 初始化需要在UI创建后加载的功能
         self.autocomplete_feature = AutocompleteFeature(self)
+        
+        # 初始化编辑器增强功能（在UI创建后）
+        self._init_editor_enhancements()
         
         # 内容修改标记
         self._content_modified = False
@@ -216,6 +235,11 @@ class App(ctk.CTk):
         self.bind('<F1>', lambda e: self.show_help())
         self.bind('<F11>', lambda e: self.focus_mode.toggle())  # 专注模式
         self.bind('<F12>', lambda e: self.reading_mode.toggle())  # 阅读模式
+        self.bind('<Control-F11>', lambda e: self.toggle_fullscreen_preview())  # 全屏预览
+        self.bind('<Control-Shift-p>', lambda e: self.show_print_preview())  # 打印预览
+        self.bind('<Control-Shift-o>', lambda e: self.show_ocr())  # OCR 功能
+        self.bind('<Control-Shift-d>', lambda e: self.show_database())  # 文档库
+        self.bind('<Control-Shift-c>', lambda e: self.show_collaboration())  # 协作
         
         # 绑定窗口关闭事件
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -267,6 +291,59 @@ class App(ctk.CTk):
             import traceback
             traceback.print_exc()
     
+    def _init_editor_enhancements(self):
+        """初始化编辑器增强功能"""
+        try:
+            # 获取底层文本组件
+            text_widget = self.input_text._textbox if hasattr(self.input_text, '_textbox') else self.input_text
+            
+            # 1. 语法高亮
+            self.syntax_highlighter = SyntaxHighlighter(text_widget)
+            print("✅ 语法高亮已启用")
+            
+            # 2. 智能编辑（缩进、括号匹配）
+            self.smart_editor = SmartEditor(text_widget)
+            print("✅ 智能编辑已启用")
+            
+            # 3. 迷你地图（嵌入到编辑区内部右侧，VS Code 风格）
+            # 使用 text_frame 作为父容器，这样迷你地图会在文本区域内部
+            minimap_parent = self.input_editor.text_frame if hasattr(self.input_editor, 'text_frame') else self.input_card
+            self.minimap = Minimap(text_widget, minimap_parent)
+            self.minimap_visible = self.config.get('minimap_visible', True)
+            if self.minimap_visible:
+                self.minimap.show()
+            print("✅ 迷你地图已启用 (VS Code 风格)")
+            
+            # 4. 代码折叠
+            line_canvas = None
+            if hasattr(self.input_editor, 'line_numbers') and hasattr(self.input_editor.line_numbers, 'canvas'):
+                line_canvas = self.input_editor.line_numbers.canvas
+            self.code_folding = CodeFolding(text_widget, line_canvas)
+            print("✅ 代码折叠已启用")
+            
+            # 5. 预览主题管理器
+            self.preview_theme_manager = preview_theme_manager
+            saved_theme = self.config.get('preview_theme', 'github')
+            self.preview_theme_manager.set_current_theme(saved_theme)
+            print(f"✅ 预览主题已设置: {saved_theme}")
+            
+            # 6. 分屏管理器
+            self.split_screen = SplitScreenManager(self)
+            print("✅ 分屏管理器已启用")
+            
+            # 7. 全屏预览
+            self.fullscreen_preview = FullScreenPreview(self)
+            print("✅ 全屏预览已启用")
+            
+            # 8. 打印预览
+            self.print_preview = PrintPreview(self)
+            print("✅ 打印预览已启用")
+            
+        except Exception as e:
+            print(f"⚠️ 编辑器增强功能初始化失败: {e}")
+            import traceback
+            traceback.print_exc()
+    
     def _create_header(self):
         """创建顶部标题栏"""
         self.header = ctk.CTkFrame(self, fg_color=COLORS['primary'], height=60, corner_radius=0)
@@ -290,22 +367,25 @@ class App(ctk.CTk):
         toolbar_frame = ctk.CTkFrame(self.header, fg_color="transparent")
         toolbar_frame.pack(side="left", padx=24)
         
-        # 工具按钮 - 使用兼容的 Unicode 符号
+        # 工具按钮 - 使用更可爱的图标
         tools = [
-            ("📂", "打开", self.open_file, "Ctrl+O"),
-            ("💾", "保存", self.save_file, "Ctrl+S"),
-            ("✦", "规范化", self.format_markdown, "Ctrl+Shift+F"),
-            ("🔍", "搜索", self.show_search_dialog, "Ctrl+F"),
-            ("👁", "预览", self.toggle_preview, "Ctrl+P"),
-            ("📤", "导出", self.export_to_word, "Ctrl+Shift+S"),
-            ("📄", "PDF", self.export_to_pdf, ""),
-            ("🤖", "AI助手", self.show_ai_assistant, "Ctrl+I"),
-            ("📦", "批量导出", self.show_batch_export, "Ctrl+B"),
-            ("📊", "图表", self.show_chart_editor, "Ctrl+G"),
-            ("🧠", "导图", self.show_mindmap, "Ctrl+T"),
-            ("📑", "文献", self.show_bibliography, "Ctrl+R"),
-            ("🔄", "版本", self.show_version_control, "Ctrl+H"),
-            ("🔗", "链接", self.show_link_checker, "Ctrl+L"),
+            (get_toolbar_icon("open"), "打开", self.open_file, "Ctrl+O"),
+            (get_toolbar_icon("save"), "保存", self.save_file, "Ctrl+S"),
+            (get_toolbar_icon("format"), "规范化", self.format_markdown, "Ctrl+Shift+F"),
+            (get_toolbar_icon("search"), "搜索", self.show_search_dialog, "Ctrl+F"),
+            (get_toolbar_icon("preview"), "预览", self.toggle_preview, "Ctrl+P"),
+            (get_toolbar_icon("export"), "导出", self.export_to_word, "Ctrl+Shift+S"),
+            (get_toolbar_icon("pdf"), "PDF", self.export_to_pdf, ""),
+            (get_toolbar_icon("ocr"), "OCR", self.show_ocr, "Ctrl+Shift+O"),
+            (get_toolbar_icon("ai"), "AI助手", self.show_ai_assistant, "Ctrl+I"),
+            (get_toolbar_icon("batch"), "批量导出", self.show_batch_export, ""),
+            (get_toolbar_icon("chart"), "图表", self.show_chart_editor, ""),
+            (get_toolbar_icon("mindmap"), "导图", self.show_mindmap, ""),
+            (get_toolbar_icon("bibliography"), "文献", self.show_bibliography, ""),
+            (get_toolbar_icon("version"), "版本", self.show_version_control, ""),
+            (get_toolbar_icon("link"), "链接", self.show_link_checker, ""),
+            (get_toolbar_icon("database"), "文档库", self.show_database, "Ctrl+Shift+D"),
+            (get_toolbar_icon("collab"), "协作", self.show_collaboration, "Ctrl+Shift+C"),
         ]
         
         self.preview_btn = None
@@ -331,7 +411,7 @@ class App(ctk.CTk):
         # 插入按钮（带下拉菜单）
         self.insert_btn = ctk.CTkButton(
             toolbar_frame,
-            text="➕",
+            text=get_toolbar_icon("insert"),
             width=38,
             height=34,
             corner_radius=10,
@@ -352,7 +432,7 @@ class App(ctk.CTk):
         # 侧边栏切换
         self.sidebar_btn = ctk.CTkButton(
             btn_frame,
-            text="☰",
+            text=get_toolbar_icon("sidebar"),
             command=self.toggle_sidebar,
             fg_color="transparent",
             text_color="white",
@@ -369,7 +449,7 @@ class App(ctk.CTk):
         # 字体调整
         self.font_minus_btn = ctk.CTkButton(
             btn_frame,
-            text="A-",
+            text=get_toolbar_icon("font_minus"),
             command=lambda: self.change_font_size(-1),
             fg_color="transparent",
             text_color="white",
@@ -385,7 +465,7 @@ class App(ctk.CTk):
         
         self.font_plus_btn = ctk.CTkButton(
             btn_frame,
-            text="A+",
+            text=get_toolbar_icon("font_plus"),
             command=lambda: self.change_font_size(1),
             fg_color="transparent",
             text_color="white",
@@ -402,7 +482,7 @@ class App(ctk.CTk):
         # 主题切换
         self.theme_btn = ctk.CTkButton(
             btn_frame,
-            text=("☀️" if ctk.get_appearance_mode() == "Dark" else "🌙"),
+            text=(get_toolbar_icon("theme_light") if ctk.get_appearance_mode() == "Dark" else get_toolbar_icon("theme_dark")),
             command=self.toggle_theme,
             fg_color="transparent",
             text_color="white",
@@ -418,7 +498,7 @@ class App(ctk.CTk):
         # 自定义主题
         self.theme_editor_btn = ctk.CTkButton(
             btn_frame,
-            text="🎨",
+            text=get_toolbar_icon("theme_editor"),
             command=self.theme_editor.show_editor,
             fg_color="transparent",
             text_color="white",
@@ -434,7 +514,7 @@ class App(ctk.CTk):
         # Phase 1: 专注模式按钮
         self.focus_mode_btn = ctk.CTkButton(
             btn_frame,
-            text="🎯",
+            text=get_toolbar_icon("focus"),
             command=self.focus_mode.toggle,
             fg_color="transparent",
             text_color="white",
@@ -450,7 +530,7 @@ class App(ctk.CTk):
         # Phase 1: 阅读模式按钮
         self.reading_mode_btn = ctk.CTkButton(
             btn_frame,
-            text="📖",
+            text=get_toolbar_icon("reading"),
             command=self.reading_mode.toggle,
             fg_color="transparent",
             text_color="white",
@@ -462,10 +542,58 @@ class App(ctk.CTk):
         self.reading_mode_btn.pack(side="left", padx=3)
         self._header_default_buttons.append(self.reading_mode_btn)
         self.tooltip.add_tooltip(self.reading_mode_btn, "阅读模式\nF12")
+        
+        # 迷你地图切换按钮
+        self.minimap_btn = ctk.CTkButton(
+            btn_frame,
+            text=get_toolbar_icon("minimap"),
+            command=self.toggle_minimap,
+            fg_color="transparent",
+            text_color="white",
+            hover_color=COLORS['primary_hover'],
+            corner_radius=10,
+            width=38,
+            height=34
+        )
+        self.minimap_btn.pack(side="left", padx=3)
+        self._header_default_buttons.append(self.minimap_btn)
+        self.tooltip.add_tooltip(self.minimap_btn, "迷你地图\n文档缩略导航")
+        
+        # 分屏模式按钮
+        self.split_mode_btn = ctk.CTkButton(
+            btn_frame,
+            text=get_toolbar_icon("split"),
+            command=self.toggle_split_mode,
+            fg_color="transparent",
+            text_color="white",
+            hover_color=COLORS['primary_hover'],
+            corner_radius=10,
+            width=38,
+            height=34
+        )
+        self.split_mode_btn.pack(side="left", padx=3)
+        self._header_default_buttons.append(self.split_mode_btn)
+        self.tooltip.add_tooltip(self.split_mode_btn, "切换分屏模式\n左右/上下/仅编辑/仅预览")
+        
+        # 全屏预览按钮
+        self.fullscreen_btn = ctk.CTkButton(
+            btn_frame,
+            text=get_toolbar_icon("fullscreen"),
+            command=self.toggle_fullscreen_preview,
+            fg_color="transparent",
+            text_color="white",
+            hover_color=COLORS['primary_hover'],
+            corner_radius=10,
+            width=38,
+            height=34
+        )
+        self.fullscreen_btn.pack(side="left", padx=3)
+        self._header_default_buttons.append(self.fullscreen_btn)
+        self.tooltip.add_tooltip(self.fullscreen_btn, "全屏预览\nCtrl+F11")
 
         self.export_style_header_btn = ctk.CTkButton(
             btn_frame,
-            text="⚙",
+            text=get_toolbar_icon("settings"),
             command=self.open_export_style_settings,
             fg_color="transparent",
             text_color="white",
@@ -629,12 +757,40 @@ class App(ctk.CTk):
         self.preview_card = ModernCard(parent, title="👁️ 实时预览")
         self.preview_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
         
-        # 顶部缩放控件
-        zoom_frame = ctk.CTkFrame(self.preview_card, fg_color="transparent", height=30)
-        zoom_frame.pack(fill="x", padx=10, pady=(4, 0))
+        # 顶部控件栏
+        top_frame = ctk.CTkFrame(self.preview_card, fg_color="transparent", height=30)
+        top_frame.pack(fill="x", padx=10, pady=(4, 0))
         
-        # 缩放控件放在右侧
-        zoom_controls = self.preview_zoom_feature.create_controls(zoom_frame)
+        # 左侧：预览主题选择
+        theme_frame = ctk.CTkFrame(top_frame, fg_color="transparent")
+        theme_frame.pack(side="left")
+        
+        theme_label = ctk.CTkLabel(
+            theme_frame,
+            text="主题:",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS['text_secondary']
+        )
+        theme_label.pack(side="left", padx=(0, 4))
+        
+        # 主题下拉选择
+        theme_names = [name for name, _ in preview_theme_manager.get_theme_names()]
+        theme_display = {name: theme.display_name for name, theme in preview_theme_manager.get_all_themes().items()}
+        
+        self.preview_theme_var = ctk.StringVar(value=self.config.get('preview_theme', 'github'))
+        self.preview_theme_combo = ctk.CTkComboBox(
+            theme_frame,
+            values=[theme_display.get(n, n) for n in theme_names],
+            variable=self.preview_theme_var,
+            width=100,
+            height=24,
+            font=ctk.CTkFont(size=11),
+            command=self._on_preview_theme_change
+        )
+        self.preview_theme_combo.pack(side="left")
+        
+        # 右侧：缩放控件
+        zoom_controls = self.preview_zoom_feature.create_controls(top_frame)
         zoom_controls.pack(side="right")
         
         # 预览组件（添加滚动同步回调）
@@ -1014,6 +1170,144 @@ class App(ctk.CTk):
         """显示 AI 写作助手"""
         if hasattr(self, 'ai_assistant') and self.ai_assistant:
             self.ai_assistant.show_dialog()
+    
+    def show_ocr(self):
+        """显示 OCR 图片转 Markdown 对话框"""
+        if hasattr(self, 'ocr_feature') and self.ocr_feature:
+            self.ocr_feature.show_dialog()
+    
+    def show_database(self):
+        """显示 Markdown 数据库/文档库功能"""
+        if hasattr(self, 'database_feature') and self.database_feature:
+            self.database_feature.show_vault_selector()
+    
+    def show_collaboration(self):
+        """显示实时协作功能"""
+        if hasattr(self, 'collaboration_feature') and self.collaboration_feature:
+            self.collaboration_feature.show_dialog()
+    
+    def toggle_minimap(self):
+        """切换迷你地图显示"""
+        if hasattr(self, 'minimap'):
+            self.minimap_visible = not self.minimap_visible
+            if self.minimap_visible:
+                self.minimap.show()
+                self.update_status("🗺️ 迷你地图已开启")
+            else:
+                self.minimap.hide()
+                self.update_status("🗺️ 迷你地图已关闭")
+            
+            # 保存配置
+            self.config['minimap_visible'] = self.minimap_visible
+            save_config(self.config)
+    
+    def _on_preview_theme_change(self, choice):
+        """预览主题切换"""
+        # 根据显示名称找到主题名
+        for name, theme in preview_theme_manager.get_all_themes().items():
+            if theme.display_name == choice:
+                preview_theme_manager.set_current_theme(name)
+                self.config['preview_theme'] = name
+                save_config(self.config)
+                
+                # 应用主题到预览组件
+                if hasattr(self, 'preview'):
+                    theme_config = theme.to_tkinter_config()
+                    self.preview.apply_theme(theme_config)
+                
+                # 刷新预览
+                self.on_text_change(None)
+                self.update_status(f"🎨 预览主题: {choice}")
+                break
+    
+    def toggle_syntax_highlight(self, enabled: bool = None):
+        """切换语法高亮"""
+        if hasattr(self, 'syntax_highlighter'):
+            if enabled is None:
+                enabled = not self.syntax_highlighter._enabled
+            
+            if enabled:
+                self.syntax_highlighter.enable()
+                self.update_status("✨ 语法高亮已开启")
+            else:
+                self.syntax_highlighter.disable()
+                self.update_status("✨ 语法高亮已关闭")
+    
+    def toggle_smart_editing(self, enabled: bool = None):
+        """切换智能编辑"""
+        if hasattr(self, 'smart_editor'):
+            if enabled is None:
+                # 切换状态
+                if self.smart_editor.smart_indent._enabled:
+                    self.smart_editor.disable_all()
+                    self.update_status("📝 智能编辑已关闭")
+                else:
+                    self.smart_editor.enable_all()
+                    self.update_status("📝 智能编辑已开启")
+            elif enabled:
+                self.smart_editor.enable_all()
+            else:
+                self.smart_editor.disable_all()
+    
+    def toggle_code_folding(self, enabled: bool = None):
+        """切换代码折叠"""
+        if hasattr(self, 'code_folding'):
+            if enabled is None:
+                enabled = not self.code_folding._enabled
+            
+            if enabled:
+                self.code_folding.enable()
+                self.update_status("📁 代码折叠已开启")
+            else:
+                self.code_folding.disable()
+                self.update_status("📁 代码折叠已关闭")
+    
+    def fold_all_code(self):
+        """折叠所有代码块"""
+        if hasattr(self, 'code_folding'):
+            self.code_folding.fold_all()
+            self.update_status("📁 已折叠所有代码块")
+    
+    def unfold_all_code(self):
+        """展开所有代码块"""
+        if hasattr(self, 'code_folding'):
+            self.code_folding.unfold_all()
+            self.update_status("📂 已展开所有代码块")
+    
+    def set_split_horizontal(self):
+        """设置左右分屏"""
+        if hasattr(self, 'split_screen'):
+            self.split_screen.set_horizontal()
+    
+    def set_split_vertical(self):
+        """设置上下分屏"""
+        if hasattr(self, 'split_screen'):
+            self.split_screen.set_vertical()
+    
+    def set_editor_only(self):
+        """设置仅编辑器模式"""
+        if hasattr(self, 'split_screen'):
+            self.split_screen.set_editor_only()
+    
+    def set_preview_only(self):
+        """设置仅预览模式"""
+        if hasattr(self, 'split_screen'):
+            self.split_screen.set_preview_only()
+    
+    def toggle_split_mode(self):
+        """循环切换分屏模式"""
+        if hasattr(self, 'split_screen'):
+            self.split_screen.toggle_mode()
+    
+    def toggle_fullscreen_preview(self):
+        """切换全屏预览"""
+        if hasattr(self, 'fullscreen_preview'):
+            self.fullscreen_preview.toggle()
+    
+    def show_print_preview(self):
+        """显示打印预览"""
+        if hasattr(self, 'print_preview'):
+            self.print_preview.show()
     
     def show_search_dialog(self):
         """显示搜索替换对话框"""

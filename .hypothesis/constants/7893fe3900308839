@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\header_footer_editor.py
+# hypothesis_version: 6.148.8
+
+[300, '500x500', 'bold', 'both', 'bottom', 'center', 'footer', 'footer_align', 'footer_text', 'gray', 'header', 'header_align', 'header_footer', 'header_text', 'left', 'right', 'show_date', 'show_page_num', 'transparent', 'w', 'x', '保存设置', '其他选项', '内容:', '取消', '右对齐', '对齐:', '居中', '左对齐', '页眉显示日期', '页眉设置', '页眉页脚设置', '页脚显示页码', '页脚设置']

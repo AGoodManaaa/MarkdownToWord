@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\database\vault.py
+# hypothesis_version: 6.148.8
+
+[0.5, '!', '#', '# ', '*.md', '.git', '.md', '.obsidian', '.trash', ':memory:', '__pycache__', 'content_hash', 'created', 'created_at', 'deleted', 'frontmatter', 'modified', 'modified_at', 'node_modules', 'path', 'r', 'size', 'tags', 'title', 'utf-8']

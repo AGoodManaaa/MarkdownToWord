@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\ocr\image_input.py
+# hypothesis_version: 6.148.8
+
+[255, 1024, 4096, '.bmp', '.gif', '.jpeg', '.jpg', '.png', '.webp', '1', 'CMYK', 'Image.Image', 'L', 'P', 'Pillow ImageGrab 不可用', 'Pillow 库未安装', 'RGB', 'RGBA', 'format', 'height', 'mode', 'size_bytes', 'width']

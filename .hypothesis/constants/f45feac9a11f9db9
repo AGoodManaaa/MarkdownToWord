@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\editor_context_menu.py
+# hypothesis_version: 6.148.8
+
+['+', '<<Copy>>', '<<Cut>>', '<<Paste>>', '<<SelectAll>>', '<Button-3>', 'Microsoft YaHei', 'insert', '全选', '剪切', '复制', '复制到剪贴板', '导出 Word', '插入...', '撤销', '粘贴', '重做']

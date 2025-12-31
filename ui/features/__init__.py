@@ -51,3 +51,23 @@ from .mindmap import MindmapFeature
 from .bibliography import BibliographyFeature
 from .version_control import VersionControlFeature
 from .autocomplete import AutocompleteFeature
+
+# Phase 5 新增功能 - OCR、数据库、协作
+from .ocr import OCRFeature, OCRDialog, ImageInputManager, OCREngine, MarkdownGenerator
+from .database import DatabaseFeature, VaultManager, SearchEngine, TagManager, LinkManager, GraphView
+from .collaboration import CollaborationFeature, CollaborationServer, CollaborationClient, CRDTEngine
+
+# Phase 7 新增功能 - 性能优化
+from .incremental_renderer import (
+    IncrementalRenderer, 
+    VirtualScroller, 
+    ImageLazyLoader, 
+    PerformanceMonitor
+)
+from .startup_optimizer import (
+    StartupOptimizer, 
+    SplashScreen, 
+    MemoryOptimizer, 
+    CacheManager, 
+    LRUCache
+)

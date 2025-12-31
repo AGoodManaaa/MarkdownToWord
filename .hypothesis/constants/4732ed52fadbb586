@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\collaboration\panels.py
+# hypothesis_version: 6.148.8
+
+[120, 150, 200, '#15803d', '#16a34a', '#4ECDC4', '#b91c1c', '#dc2626', '*', '1.0', '450x400', 'CollaborationDialog', 'CustomTkinter 未安装', 'Unknown', 'bold', 'both', 'color', 'comment', 'edit', 'end', 'end-1c', 'gray', 'host', 'id', 'input_text', 'insert', 'is_online', 'left', 'name', 'permission', 'right', 'view', 'ws://localhost:8765', 'x', '●', '✅ 已连接', '会话密码（可选）:', '会话码:', '会话码已复制到剪贴板', '创建会话', '加入会话', '协作已启动', '在线参与者:', '密码（如需要）:', '已加入协作会话', '已复制', '已断开', '开始协作', '您的名称:', '成功', '提示', '服务器地址:', '查看', '用户', '编辑', '评论', '请填写服务器地址和会话码', '连接失败', '错误', '👥 实时协作', '📋 复制会话码', '🔌 断开连接', '🔗 加入会话', '🚀 开始协作']

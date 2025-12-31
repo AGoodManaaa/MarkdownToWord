@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\ocr\markdown_gen.py
+# hypothesis_version: 6.148.8
+
+['\n---\n', ' |', ' | ', '#', '$', '*', '-', '- ', '---', '.', '\\', '\\\\', '\\\\\\\\', '\\\\begin\\{', '\\\\displaystyle', '\\\\end\\{', '\\\\newline', '^(\\d+)[.、)）]\\s*', 'cells', '|', '| ', '·', '•', '▸', '►', '◆', '◇', '○', '●']

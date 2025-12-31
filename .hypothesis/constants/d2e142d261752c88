@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\ocr\ocr_engine.py
+# hypothesis_version: 6.148.8
+
+[0.0, 0.8, 0.85, 0.9, 1.0, ' |', ' | ', '---', '//tr', '; ', 'Image.Image', 'OCR 引擎初始化失败', 'RGB', 'bbox', 'bbox_points', 'ch', 'formula', 'html', 'image', 'init_error', 'initialized', 'lang', 'res', 'supports_formula', 'supports_table', 'supports_text', 'table', 'td|th', 'text', 'type', 'use_gpu', '| ']

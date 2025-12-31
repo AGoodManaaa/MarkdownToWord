@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\insert_templates.py
+# hypothesis_version: 6.148.8
+
+[100, 160, 480, 500, '\n---\n', '![图片描述](图片路径)', '# 在此输入代码', '1.0', '500x480', '\\frac{a}{b} = c', '_snippet_index', '_textbox', 'bold', 'border', 'both', 'break', 'end', 'header_footer', 'https://example.com', 'insert', 'insert_templates', 'left', 'md2word_snippet_end', 'primary', 'primary_hover', 'right', 'sel', 'text_primary', 'text_secondary', 'transparent', 'x', 'π 公式', '─── 分割线', '☐ 任务列表', '⚠️ 功能未初始化', '✅ 已插入代码块模板', '✅ 已插入任务列表模板', '✅ 已插入公式模板', '✅ 已插入分割线', '✅ 已插入图片模板', '✅ 已插入表格模板', '✅ 已插入链接模板', '✅ 页眉页脚设置已更新', '➕ 插入内容', '关闭', '内容1', '图片描述', '图片路径', '待完成任务 1', '插入LaTeX数学公式', '插入三线表样式表格', '插入代码块', '插入任务清单', '插入内容', '插入图片引用', '插入水平分割线', '插入超链接', '配置文档页眉页脚', '链接文本', '📊 表格', '📝 代码块', '📝 页眉页脚', '🔗 链接', '🖼️ 图片']

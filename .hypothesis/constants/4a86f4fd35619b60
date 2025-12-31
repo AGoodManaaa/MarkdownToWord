@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\command_palette.py
+# hypothesis_version: 6.148.8
+
+[420, 520, '520x420', '<Double-Button-1>', '<Down>', '<Escape>', '<KeyRelease>', '<Return>', '<Up>', 'bg_card', 'bg_light', 'bold', 'border', 'both', 'break', 'browse', 'command_palette', 'end', 'flat', 'highlight', 'insert_templates', 'left', 'none', 'right', 'show_export_history', 'text_primary', 'text_secondary', 'transparent', 'w', 'x', 'y', '⌘ 命令面板', '保存文件    Ctrl+S', '切换主题', '切换侧边栏    Ctrl+B', '切换预览    Ctrl+P', '命令面板', '导出历史    Ctrl+J', '导出样式设置', '帮助    F1', '打开文件    Ctrl+O', '插入：代码块', '插入：任务列表', '插入：公式', '插入：分割线', '插入：图片', '插入：表格', '插入：链接', '搜索/替换    Ctrl+F']

@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\global_search_replace.py
+# hypothesis_version: 6.148.8
+
+[100, 400, 500, '#000000', '#FF8C00', '#FFFF00', '#FFFFFF', '.', '...', '.0', '.end', '1.0', '500x400', '<KeyRelease>', '<Return>', 'WM_DELETE_WINDOW', '\\b', '_textbox', 'both', 'current_match', 'darkgreen', 'disabled', 'end-1c', 'gray50', 'gray70', 'green', 'input_text', 'left', 'lightcoral', 'lightgreen', 'none', 'normal', 'red', 'right', 'search_highlight', 'sel.first', 'sel.last', 'transparent', 'w', 'x', '◀ 上一个', '下一个 ▶', '全词匹配', '全部替换', '匹配预览:', '区分大小写', '搜索:', '替换', '替换为:', '未找到匹配', '正则表达式', '🔎 搜索和替换']

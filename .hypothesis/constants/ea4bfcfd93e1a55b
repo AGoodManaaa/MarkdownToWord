@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\chart_editor.py
+# hypothesis_version: 6.148.8
+
+[0.3, 0.7, 100, 150, 200, 300, 650, 800, '%1.1f%%', '*.jpg', '*.png', '*.svg', ',', '.png', '1.0', '800x650', 'Agg', 'JPEG图片', 'PNG图片', 'Pastel1', 'SVG矢量图', 'Set2', 'Set3', '_textbox', 'area', 'bar', 'bold', 'both', 'current_file', 'darkgreen', 'end-1c', 'gray', 'green', 'input_text', 'insert', 'left', 'line', 'o', 'pie', 'plasma', 'red', 'right', 'scatter', 'tab10', 'tight', 'transparent', 'viridis', 'w', 'white', 'x', '保存图表', '图表', '图表标题:', '图表类型:', '成功', '我的图表', '折线图', '散点图', '显示图例', '柱状图', '警告', '请先输入有效数据', '请输入有效数据', '配色:', '错误', '面积图', '预览', '饼图', '💾 保存图片', '📊 图表编辑器', '📥 插入图表', '🔄 预览']
