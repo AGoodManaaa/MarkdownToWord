@@ -60,6 +60,9 @@ from ui.features import (
     # Phase 5 新增功能 - 数据库、协作
     DatabaseFeature,
     CollaborationFeature,
+    # Phase 6 新增功能 - 用户体验优化
+    KeyboardShortcutsFeature,
+    FolderViewFeature,
 )
 # 新增编辑器增强模块
 from ui.features.syntax_highlight import SyntaxHighlighter, HighlightTheme
@@ -187,6 +190,10 @@ class App(ctk.CTk):
         # Phase 5 新增功能 - 数据库、协作
         self.database_feature = DatabaseFeature(self)
         self.collaboration_feature = CollaborationFeature(self)
+        
+        # Phase 6 新增功能 - 用户体验优化
+        self.keyboard_shortcuts = KeyboardShortcutsFeature(self)
+        self.folder_view_feature = FolderViewFeature(self)
         
         # 初始化 UI
         self._init_ui()
@@ -611,6 +618,22 @@ class App(ctk.CTk):
             self.tooltip.add_tooltip(self.export_style_header_btn, "导出样式设置\n(含导入Word模板)")
         except Exception:
             pass
+        
+        # 快捷键设置按钮
+        self.shortcuts_btn = ctk.CTkButton(
+            btn_frame,
+            text="⌨️",
+            command=self.show_keyboard_shortcuts,
+            fg_color="transparent",
+            text_color="white",
+            hover_color=COLORS['primary_hover'],
+            corner_radius=10,
+            width=38,
+            height=34,
+        )
+        self.shortcuts_btn.pack(side="left", padx=3)
+        self._header_default_buttons.append(self.shortcuts_btn)
+        self.tooltip.add_tooltip(self.shortcuts_btn, "快捷键设置")
 
         # 初始样式刷新
         self.header_styler.update_states()
@@ -659,6 +682,14 @@ class App(ctk.CTk):
     
     def _create_sidebar_content(self):
         """创建侧边栏内容"""
+        # 文件夹视图
+        self.folder_view = self.folder_view_feature.create_view(self.sidebar)
+        self.folder_view.pack(fill="both", expand=True, pady=(0, 5))
+        
+        # 分隔线
+        separator1 = ctk.CTkFrame(self.sidebar, height=1, fg_color=COLORS['border'])
+        separator1.pack(fill="x", padx=15, pady=5)
+        
         # 大纲视图
         self.outline_view = OutlineView(
             self.sidebar,
@@ -667,8 +698,8 @@ class App(ctk.CTk):
         self.outline_view.pack(fill="both", expand=True, pady=(0, 10))
         
         # 分隔线
-        separator = ctk.CTkFrame(self.sidebar, height=1, fg_color=COLORS['border'])
-        separator.pack(fill="x", padx=15, pady=5)
+        separator2 = ctk.CTkFrame(self.sidebar, height=1, fg_color=COLORS['border'])
+        separator2.pack(fill="x", padx=15, pady=5)
         
         # 最近文件
         self.recent_files_view = RecentFilesView(
@@ -1196,6 +1227,16 @@ class App(ctk.CTk):
         """显示实时协作功能"""
         if hasattr(self, 'collaboration_feature') and self.collaboration_feature:
             self.collaboration_feature.show_dialog()
+    
+    def show_keyboard_shortcuts(self):
+        """显示快捷键设置"""
+        if hasattr(self, 'keyboard_shortcuts') and self.keyboard_shortcuts:
+            self.keyboard_shortcuts.show_dialog()
+    
+    def open_folder(self):
+        """打开文件夹"""
+        if hasattr(self, 'folder_view_feature') and self.folder_view_feature:
+            self.folder_view_feature.open_folder()
     
     def toggle_minimap(self):
         """切换迷你地图显示"""

@@ -72,3 +72,16 @@ from .startup_optimizer import (
     CacheManager, 
     LRUCache
 )
+
+# Phase 6 新增功能 - 用户体验优化
+from .keyboard_shortcuts import (
+    KeyboardShortcutsFeature,
+    KeyboardShortcutsManager,
+    KeyboardShortcutsDialog,
+    ShortcutItem
+)
+from .folder_view import (
+    FolderViewFeature,
+    FolderTreeView,
+    FileNode
+)

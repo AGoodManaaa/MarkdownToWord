@@ -323,57 +323,72 @@
 
 ---
 
-## 第六阶段：用户体验优化 (P1)
+## 第六阶段：用户体验优化 (P1) ✅ 已完成
 
-### 需求 6.1 主题系统
+### 需求 6.1 主题系统 ✅ 已完成
 
 **用户故事:** 作为用户，我希望能选择不同的界面主题。
 
 **验收标准:**
-1. WHEN 用户选择主题 THEN 系统 SHALL 应用主题样式
-2. WHEN 主题切换时 THE 系统 SHALL 平滑过渡
-3. WHERE 主题设置 THE 系统 SHALL 提供至少 5 套主题
-4. WHEN 用户自定义主题 THEN 系统 SHALL 保存自定义配置
 
-### 需求 6.2 快捷键自定义
+1. ✅ WHEN 用户选择主题 THEN 系统 SHALL 应用主题样式
+2. ✅ WHEN 主题切换时 THE 系统 SHALL 平滑过渡
+3. ✅ WHERE 主题设置 THE 系统 SHALL 提供至少 5 套主题
+4. ✅ WHEN 用户自定义主题 THEN 系统 SHALL 保存自定义配置
+
+**实现文件:** `ui/features/theme_editor.py`, `ui/features/theme_feature.py`
+
+### 需求 6.2 快捷键自定义 ✅ 已完成
 
 **用户故事:** 作为用户，我希望能自定义快捷键。
 
 **验收标准:**
-1. WHEN 用户打开快捷键设置 THEN 系统 SHALL 显示所有快捷键
-2. WHEN 用户修改快捷键 THEN 系统 SHALL 检测冲突
-3. WHEN 快捷键保存 THEN 系统 SHALL 立即生效
-4. WHEN 用户重置 THEN 系统 SHALL 恢复默认快捷键
 
-### 需求 6.3 文件夹视图
+1. ✅ WHEN 用户打开快捷键设置 THEN 系统 SHALL 显示所有快捷键
+2. ✅ WHEN 用户修改快捷键 THEN 系统 SHALL 检测冲突
+3. ✅ WHEN 快捷键保存 THEN 系统 SHALL 立即生效
+4. ✅ WHEN 用户重置 THEN 系统 SHALL 恢复默认快捷键
+
+**实现文件:** `ui/features/keyboard_shortcuts.py`
+
+### 需求 6.3 文件夹视图 ✅ 已完成
 
 **用户故事:** 作为用户，我希望能在侧边栏浏览文件夹。
 
 **验收标准:**
-1. WHEN 用户打开文件夹 THEN 系统 SHALL 在侧边栏显示文件树
-2. WHEN 用户点击文件 THEN 系统 SHALL 打开该文件
-3. WHEN 用户右键文件 THEN 系统 SHALL 显示上下文菜单
-4. WHEN 文件变化 THEN 系统 SHALL 自动刷新文件树
 
-### 需求 6.4 标签页
+1. ✅ WHEN 用户打开文件夹 THEN 系统 SHALL 在侧边栏显示文件树
+2. ✅ WHEN 用户点击文件 THEN 系统 SHALL 打开该文件
+3. ✅ WHEN 用户右键文件 THEN 系统 SHALL 显示上下文菜单
+4. ✅ WHEN 文件变化 THEN 系统 SHALL 自动刷新文件树
+
+**实现文件:** `ui/features/folder_view.py`
+
+### 需求 6.4 标签页 ✅ 已完成
 
 **用户故事:** 作为用户，我希望能同时编辑多个文件。
 
 **验收标准:**
-1. WHEN 用户打开多个文件 THEN 系统 SHALL 显示标签页
-2. WHEN 用户点击标签 THEN 系统 SHALL 切换到该文件
-3. WHEN 用户关闭标签 THEN 系统 SHALL 提示保存未保存的更改
-4. WHEN 用户拖动标签 THEN 系统 SHALL 调整标签顺序
 
-### 需求 6.5 自动保存
+1. ✅ WHEN 用户打开多个文件 THEN 系统 SHALL 显示标签页
+2. ✅ WHEN 用户点击标签 THEN 系统 SHALL 切换到该文件
+3. ✅ WHEN 用户关闭标签 THEN 系统 SHALL 提示保存未保存的更改
+4. ✅ WHEN 用户拖动标签 THEN 系统 SHALL 调整标签顺序
+
+**实现文件:** `ui/features/tab_manager.py`
+
+### 需求 6.5 自动保存 ✅ 已完成
 
 **用户故事:** 作为用户，我希望文档能自动保存。
 
 **验收标准:**
-1. WHEN 用户编辑内容 THEN 系统 SHALL 定时自动保存
-2. WHEN 自动保存时 THE 系统 SHALL 显示保存状态
-3. WHERE 自动保存设置 THE 系统 SHALL 支持设置间隔
-4. WHEN 程序崩溃后重启 THEN 系统 SHALL 恢复未保存内容
+
+1. ✅ WHEN 用户编辑内容 THEN 系统 SHALL 定时自动保存
+2. ✅ WHEN 自动保存时 THE 系统 SHALL 显示保存状态
+3. ✅ WHERE 自动保存设置 THE 系统 SHALL 支持设置间隔
+4. ✅ WHEN 程序崩溃后重启 THEN 系统 SHALL 恢复未保存内容
+
+**实现文件:** `ui/features/auto_save.py`
 
 ---
 
@@ -442,7 +457,7 @@
 | 3 | 导出功能增强 | 1-2 周 | P1 | ✅ 已完成 |
 | 4 | 协作功能完善 | 2 周 | P1 | ✅ 已完成 |
 | 5 | AI 功能增强 | 2-3 周 | P2 | 部分完成 |
-| 6 | 用户体验优化 | 2 周 | P1 | 部分完成 |
+| 6 | 用户体验优化 | 2 周 | P1 | ✅ 已完成 |
 | 7 | 性能优化 | 1-2 周 | P1 | ✅ 已完成 |
 
 **总计: 约 11-16 周**
@@ -483,6 +498,14 @@
 - ✅ 版本历史 (`ui/features/collaboration/version_history.py`)
 - ✅ 网络监控 (`ui/features/collaboration/network.py`)
 - ✅ 安全功能 (`ui/features/collaboration/security.py`)
+
+### 第六阶段：用户体验优化 ✅
+
+- ✅ 主题系统 (`ui/features/theme_editor.py`, `ui/features/theme_feature.py`)
+- ✅ 快捷键自定义 (`ui/features/keyboard_shortcuts.py`)
+- ✅ 文件夹视图 (`ui/features/folder_view.py`)
+- ✅ 标签页 (`ui/features/tab_manager.py`)
+- ✅ 自动保存 (`ui/features/auto_save.py`)
 
 ### 第七阶段：性能优化 ✅
 
