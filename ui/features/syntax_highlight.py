@@ -81,15 +81,16 @@ PATTERNS = {
 
 
 class SyntaxHighlighter:
-    """Markdown 语法高亮器"""
+    """Markdown 语法高亮器 - 支持虚拟化渲染"""
     
-    def __init__(self, text_widget, theme: HighlightTheme = None):
+    def __init__(self, text_widget, theme: HighlightTheme = None, buffer_lines: int = 50):
         """
         初始化语法高亮器
         
         Args:
             text_widget: tkinter Text 或 CTkTextbox 组件
             theme: 高亮主题
+            buffer_lines: 可视区域上下缓冲行数，用于虚拟化渲染
         """
         self.text_widget = text_widget
         self.theme = theme or DEFAULT_THEME
@@ -98,6 +99,12 @@ class SyntaxHighlighter:
         self._code_block_start_line = 0
         self._debounce_id = None
         self._debounce_delay = 50  # ms
+        
+        # 虚拟化渲染参数
+        self.buffer_lines = buffer_lines
+        self._rendered_range = (0, 0)  # 已渲染的行范围
+        self._last_visible_range = (0, 0)  # 上次可见范围
+        self._highlight_cache = {}  # 行高亮缓存: {line_num: content_hash}
         
         # 获取底层 Text 组件
         if hasattr(text_widget, '_textbox'):
@@ -110,6 +117,9 @@ class SyntaxHighlighter:
         
         # 绑定事件
         self._bind_events()
+        
+        # 绑定滚动事件以支持虚拟化
+        self._bind_scroll_events()
     
     def _configure_tags(self):
         """配置文本标签样式"""

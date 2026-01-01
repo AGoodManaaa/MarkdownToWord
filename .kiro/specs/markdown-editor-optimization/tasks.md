@@ -49,7 +49,7 @@
 
 ## Phase 2: 性能优化
 
-- [ ] 4. 实现虚拟化语法高亮
+- [-] 4. 实现虚拟化语法高亮
   - [ ] 4.1 修改SyntaxHighlighter只渲染可视区域
     - 添加`buffer_lines`参数控制缓冲区大小
     - 实现`_highlight_visible()`方法优化
