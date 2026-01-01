@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\collaboration\security.py
+# hypothesis_version: 6.148.8
+
+[100, 3600, 100000, '#059669', '#10b981', '#6b7280', '#ef4444', '#f59e0b', '000', '111', '123', ':', 'Fernet', 'IP地址被禁止访问', '[A-Z]', '[a-z]', '\\d', 'abc', 'fair', 'good', 'id', 'ip_blacklist', 'ip_whitelist', 'is_locked', 'join_time', 'max_participants', 'password', 'qwerty', 'strong', 'waiting_room_enabled', 'weak', '一般', '会议已锁定', '密码长度至少8位', '弱', '强', '未知', '添加大写字母', '添加小写字母', '添加数字', '添加特殊字符', '良好', '请在等候室等待主持人允许', '避免使用常见模式']

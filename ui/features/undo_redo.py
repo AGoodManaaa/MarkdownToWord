@@ -25,6 +25,26 @@ class TextOperation:
         self.tags = tags
 
 
+class BatchOperation:
+    """批量操作记录 - 将多个操作合并为一个撤销点"""
+    
+    def __init__(self, operations: List['TextOperation'] = None):
+        """
+        Args:
+            operations: 操作列表
+        """
+        self.operations = operations or []
+        self.op_type = 'batch'  # 标识为批量操作
+    
+    def add(self, operation: 'TextOperation'):
+        """添加操作到批量"""
+        self.operations.append(operation)
+    
+    def is_empty(self) -> bool:
+        """是否为空"""
+        return len(self.operations) == 0
+
+
 class UndoRedoManager:
     """撤销/重做管理器"""
     
@@ -45,12 +65,59 @@ class UndoRedoManager:
         self.is_undoing = False
         self.is_redoing = False
         
-        # 是否启用（可以临时禁用）
-        self.enabled = False
+        # 默认启用撤销记录
+        self.enabled = True
         
         # 操作记录缓冲
         self.last_insert_pos = None
         self.last_delete_pos = None
+        
+        # 批量操作支持
+        self._batch_mode = False
+        self._current_batch: Optional[BatchOperation] = None
+    
+    def begin_batch(self):
+        """
+        开始批量操作模式
+        在此模式下，所有操作将被收集到一个批量中，
+        撤销时作为一个整体撤销
+        """
+        if not self._batch_mode:
+            self._batch_mode = True
+            self._current_batch = BatchOperation()
+            print("[BATCH] 开始批量操作模式")
+    
+    def end_batch(self):
+        """
+        结束批量操作模式
+        将收集的操作作为一个整体添加到撤销栈
+        """
+        if self._batch_mode and self._current_batch:
+            if not self._current_batch.is_empty():
+                # 清空重做栈
+                self.redo_stack.clear()
+                # 添加批量操作到撤销栈
+                self.undo_stack.append(self._current_batch)
+                # 限制栈大小
+                if len(self.undo_stack) > self.max_undo:
+                    self.undo_stack.pop(0)
+                print(f"[BATCH] 结束批量操作，包含 {len(self._current_batch.operations)} 个操作")
+            else:
+                print("[BATCH] 结束批量操作，无操作记录")
+            self._batch_mode = False
+            self._current_batch = None
+    
+    def cancel_batch(self):
+        """取消当前批量操作，不保存"""
+        if self._batch_mode:
+            print("[BATCH] 取消批量操作")
+            self._batch_mode = False
+            self._current_batch = None
+    
+    @property
+    def in_batch_mode(self) -> bool:
+        """是否处于批量操作模式"""
+        return self._batch_mode
         
     def enable(self):
         """启用撤销记录"""
@@ -106,6 +173,11 @@ class UndoRedoManager:
         
     def _add_operation(self, operation: TextOperation):
         """添加操作到撤销栈"""
+        # 如果在批量模式，添加到当前批量
+        if self._batch_mode and self._current_batch:
+            self._current_batch.add(operation)
+            return
+        
         # 添加新操作时，清空重做栈
         self.redo_stack.clear()
         
@@ -116,6 +188,42 @@ class UndoRedoManager:
         if len(self.undo_stack) > self.max_undo:
             self.undo_stack.pop(0)
             
+    def _undo_single_operation(self, operation: TextOperation) -> Optional[str]:
+        """
+        撤销单个操作
+        
+        Args:
+            operation: 要撤销的操作
+            
+        Returns:
+            操作位置（用于设置光标）
+        """
+        if operation.op_type == 'insert':
+            # 撤销插入 = 删除
+            end_pos = f"{operation.position} + {len(operation.content)} chars"
+            self.text_widget.delete(operation.position, end_pos)
+        else:  # delete
+            # 撤销删除 = 插入
+            self.text_widget.insert(operation.position, operation.content)
+        return operation.position
+    
+    def _redo_single_operation(self, operation: TextOperation) -> Optional[str]:
+        """
+        重做单个操作
+        
+        Args:
+            operation: 要重做的操作
+            
+        Returns:
+            操作位置（用于设置光标）
+        """
+        if operation.op_type == 'insert':
+            self.text_widget.insert(operation.position, operation.content)
+        else:  # delete
+            end_pos = f"{operation.position} + {len(operation.content)} chars"
+            self.text_widget.delete(operation.position, end_pos)
+        return operation.position
+
     def undo(self) -> bool:
         """
         执行撤销
@@ -140,25 +248,28 @@ class UndoRedoManager:
             except:
                 pass
             
+            cursor_pos = None
             try:
-                # 执行反向操作
-                if operation.op_type == 'insert':
-                    # 撤销插入 = 删除
-                    end_pos = f"{operation.position} + {len(operation.content)} chars"
-                    self.text_widget.delete(operation.position, end_pos)
-                else:  # delete
-                    # 撤销删除 = 插入
-                    self.text_widget.insert(operation.position, operation.content)
+                # 检查是否为批量操作
+                if isinstance(operation, BatchOperation):
+                    # 批量操作：逆序撤销所有子操作
+                    for sub_op in reversed(operation.operations):
+                        cursor_pos = self._undo_single_operation(sub_op)
+                    print(f"[UNDO] 批量撤销 {len(operation.operations)} 个操作")
+                else:
+                    # 单个操作
+                    cursor_pos = self._undo_single_operation(operation)
                     
                 # 添加到重做栈
                 self.redo_stack.append(operation)
                 
                 # 移动光标到操作位置
-                try:
-                    self.text_widget.mark_set('insert', operation.position)
-                    self.text_widget.see('insert')
-                except:
-                    pass
+                if cursor_pos:
+                    try:
+                        self.text_widget.mark_set('insert', cursor_pos)
+                        self.text_widget.see('insert')
+                    except:
+                        pass
             finally:
                 # 恢复Text widget的undo状态
                 if old_undo_state is not None:
@@ -196,23 +307,28 @@ class UndoRedoManager:
             except:
                 pass
             
+            cursor_pos = None
             try:
-                # 重新执行操作
-                if operation.op_type == 'insert':
-                    self.text_widget.insert(operation.position, operation.content)
-                else:  # delete
-                    end_pos = f"{operation.position} + {len(operation.content)} chars"
-                    self.text_widget.delete(operation.position, end_pos)
+                # 检查是否为批量操作
+                if isinstance(operation, BatchOperation):
+                    # 批量操作：正序重做所有子操作
+                    for sub_op in operation.operations:
+                        cursor_pos = self._redo_single_operation(sub_op)
+                    print(f"[REDO] 批量重做 {len(operation.operations)} 个操作")
+                else:
+                    # 单个操作
+                    cursor_pos = self._redo_single_operation(operation)
                     
                 # 添加回撤销栈
                 self.undo_stack.append(operation)
                 
                 # 移动光标到操作位置
-                try:
-                    self.text_widget.mark_set('insert', operation.position)
-                    self.text_widget.see('insert')
-                except:
-                    pass
+                if cursor_pos:
+                    try:
+                        self.text_widget.mark_set('insert', cursor_pos)
+                        self.text_widget.see('insert')
+                    except:
+                        pass
             finally:
                 # 恢复Text widget的undo状态
                 if old_undo_state is not None:
@@ -317,18 +433,19 @@ class UndoRedoFeature:
         """
         print("[SETUP] 开始设置撤销系统...")
         
-        # 禁用Text widget默认的撤销功能
+        # 禁用Text widget默认的撤销功能，使用我们自己的管理器
         try:
             text_widget.configure(undo=False)
             print("[SETUP] 已禁用原生undo")
         except:
             pass
         
-        # 创建撤销管理器
+        # 创建撤销管理器（默认已启用）
         self.undo_manager = UndoRedoManager(text_widget)
         
-        # 启用撤销记录
-        self.undo_manager.enable()
+        # 确保启用状态
+        if not self.undo_manager.enabled:
+            self.undo_manager.enable()
         print(f"[SETUP] 撤销管理器已启用: {self.undo_manager.enabled}")
         
         # 保存widget引用
@@ -431,6 +548,44 @@ class UndoRedoFeature:
         
         print("[SETUP] 方法包装完成")
         
+        # 绑定粘贴事件以支持批量操作
+        self._bind_paste_events(text_widget)
+    
+    def _bind_paste_events(self, text_widget):
+        """绑定粘贴事件以支持批量撤销"""
+        print("[SETUP] 绑定粘贴事件...")
+        
+        def on_paste_start(event):
+            """粘贴开始时启用批量模式"""
+            if self.undo_manager and not self.undo_manager.in_batch_mode:
+                self.undo_manager.begin_batch()
+                print("[PASTE] 开始批量模式")
+            # 不阻止默认粘贴行为
+            return None
+        
+        def on_paste_end(event=None):
+            """粘贴结束时关闭批量模式"""
+            if self.undo_manager and self.undo_manager.in_batch_mode:
+                # 延迟结束批量模式，确保所有粘贴操作都被记录
+                text_widget.after(10, self._end_paste_batch)
+        
+        # 绑定粘贴相关事件
+        text_widget.bind('<<Paste>>', on_paste_start, add='+')
+        text_widget.bind('<Control-v>', on_paste_start, add='+')
+        text_widget.bind('<Control-V>', on_paste_start, add='+')
+        
+        # 使用 KeyRelease 来检测粘贴完成
+        text_widget.bind('<KeyRelease-v>', on_paste_end, add='+')
+        text_widget.bind('<KeyRelease-V>', on_paste_end, add='+')
+        
+        print("[SETUP] 粘贴事件绑定完成")
+    
+    def _end_paste_batch(self):
+        """结束粘贴批量操作"""
+        if self.undo_manager and self.undo_manager.in_batch_mode:
+            self.undo_manager.end_batch()
+            print("[PASTE] 结束批量模式")
+        
     def undo(self):
         """执行撤销"""
         if self.undo_manager:
@@ -472,6 +627,26 @@ class UndoRedoFeature:
         if self.undo_manager:
             self.undo_manager.clear()
             self.app.update_status("撤销历史已清空")
+    
+    def begin_batch(self):
+        """开始批量操作模式"""
+        if self.undo_manager:
+            self.undo_manager.begin_batch()
+    
+    def end_batch(self):
+        """结束批量操作模式"""
+        if self.undo_manager:
+            self.undo_manager.end_batch()
+    
+    def cancel_batch(self):
+        """取消批量操作"""
+        if self.undo_manager:
+            self.undo_manager.cancel_batch()
+    
+    @property
+    def in_batch_mode(self) -> bool:
+        """是否处于批量操作模式"""
+        return self.undo_manager.in_batch_mode if self.undo_manager else False
             
     def get_status(self) -> str:
         """获取状态信息"""

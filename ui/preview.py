@@ -70,8 +70,8 @@ class MarkdownPreview(ctk.CTkFrame):
         )
         
         # 滚动条
-        self.scrollbar = ctk.CTkScrollbar(self, command=self.text.yview)
-        self.text.configure(yscrollcommand=self.scrollbar.set)
+        self.scrollbar = ctk.CTkScrollbar(self, command=self._on_scrollbar)
+        self.text.configure(yscrollcommand=self._on_text_scroll)
         
         self.scrollbar.pack(side="right", fill="y", padx=(0, 10), pady=10)
         self.text.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=10)
@@ -105,6 +105,17 @@ class MarkdownPreview(ctk.CTkFrame):
         self.text.bind('<Delete>', self._block_edit_event)
         self.text.bind('<Return>', self._block_edit_event)
         self.text.bind('<Control-a>', self._select_all)
+        
+        # 鼠标滚轮事件绑定（用于滚动同步）
+        self.text.bind('<MouseWheel>', self._on_mousewheel)
+        self.text.bind('<Button-4>', self._on_mousewheel)  # Linux
+        self.text.bind('<Button-5>', self._on_mousewheel)  # Linux
+        
+        # 双击跳转到源码行
+        self.text.bind('<Double-Button-1>', self._on_double_click)
+        
+        # 跳转回调
+        self.on_jump_to_line = None
         
         # 右键菜单
         self._create_context_menu()
@@ -1170,11 +1181,108 @@ class MarkdownPreview(ctk.CTkFrame):
         """插入图片占位"""
         self.text.insert('end', f'🖼️ [{alt}]\n\n')
 
+    # ==================== 点击跳转方法 ====================
+    
+    def _on_double_click(self, event):
+        """双击预览区跳转到对应的源码行"""
+        try:
+            # 获取点击位置
+            index = self.text.index(f"@{event.x},{event.y}")
+            line_num = int(index.split('.')[0])
+            
+            # 查找对应的源码行
+            source_line = self._find_source_line_for_preview_line(line_num)
+            
+            if source_line and self.on_jump_to_line:
+                self.on_jump_to_line(source_line)
+                
+                # 高亮显示跳转的行（短暂闪烁效果）
+                self._highlight_preview_line(line_num)
+        except Exception:
+            pass
+    
+    def _find_source_line_for_preview_line(self, preview_line: int) -> int:
+        """根据预览区行号查找对应的源码行号"""
+        # 从 paragraph_map 中查找最近的映射
+        if not self.paragraph_map:
+            return preview_line  # 回退到简单映射
+        
+        # 查找最近的段落映射
+        nearest_line = None
+        min_distance = float('inf')
+        
+        for line_start, info in self.paragraph_map.items():
+            try:
+                # line_start 是预览区的行位置
+                line_pos = int(str(line_start).split('.')[0])
+                distance = abs(line_pos - preview_line)
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_line = info.get('md_line', preview_line)
+            except Exception:
+                continue
+        
+        return nearest_line if nearest_line else preview_line
+    
+    def _highlight_preview_line(self, line_num: int):
+        """短暂高亮预览区的行"""
+        try:
+            # 添加高亮标签
+            self.text.tag_configure('jump_highlight', background='#fef3c7')
+            self.text.tag_add('jump_highlight', f"{line_num}.0", f"{line_num}.end")
+            
+            # 300ms 后移除高亮
+            self.after(300, lambda: self._remove_highlight(line_num))
+        except Exception:
+            pass
+    
+    def _remove_highlight(self, line_num: int):
+        """移除行高亮"""
+        try:
+            self.text.tag_remove('jump_highlight', f"{line_num}.0", f"{line_num}.end")
+        except Exception:
+            pass
+    
+    def set_jump_callback(self, callback):
+        """设置跳转回调函数
+        
+        Args:
+            callback: 回调函数，接收源码行号作为参数
+        """
+        self.on_jump_to_line = callback
+
     # ==================== 滚动同步方法 ====================
     
     def _on_scrollbar(self, *args):
         """滚动条事件处理"""
         self.text.yview(*args)
+        # 触发滚动同步
+        try:
+            first = self.text.yview()[0]
+            if hasattr(self, 'on_scroll') and self.on_scroll and not getattr(self, '_scroll_updating', False):
+                self.on_scroll(float(first))
+        except Exception:
+            pass
+    
+    def _on_mousewheel(self, event):
+        """鼠标滚轮事件处理"""
+        # 执行滚动
+        if event.num == 4:  # Linux scroll up
+            self.text.yview_scroll(-3, "units")
+        elif event.num == 5:  # Linux scroll down
+            self.text.yview_scroll(3, "units")
+        else:  # Windows/Mac
+            self.text.yview_scroll(-1 * (event.delta // 120), "units")
+        
+        # 触发滚动同步
+        try:
+            first = self.text.yview()[0]
+            if hasattr(self, 'on_scroll') and self.on_scroll and not getattr(self, '_scroll_updating', False):
+                self.on_scroll(float(first))
+        except Exception:
+            pass
+        
+        return "break"
     
     def _on_text_scroll(self, first, last):
         """文本滚动事件处理，同步到编辑器"""

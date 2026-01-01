@@ -1,0 +1,4 @@
+# file: D:\Code\转换\auto_dev_agent\state_manager.py
+# hypothesis_version: 6.148.8
+
+['*.json', '.auto_dev_state', '.tmp', 'id', 'in_progress', 'r', 'status', 'task', 'utf-8', 'w']

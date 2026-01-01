@@ -1,0 +1,4 @@
+# file: D:\Code\转换\auto_dev_agent\models.py
+# hypothesis_version: 6.148.8
+
+['.auto_dev_state', 'AggregatedFeedback', 'CodeOutput', 'CommandResult', 'Config', 'DevState', 'IterationResult', 'Review', 'Task', 'approved', 'code', 'command_results', 'consensus_reached', 'current_code', 'current_iteration', 'final_code', 'final_reviews', 'gpt-4', 'in_progress', 'iteration_history', 'iteration_number', 'needs_revision', 'openai', 'reviews', 'status', 'success', 'summary', 'task', 'text', 'total_iterations']

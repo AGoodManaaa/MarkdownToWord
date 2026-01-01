@@ -1,0 +1,4 @@
+# file: D:\Code\转换\auto_dev_agent\reviewers.py
+# hypothesis_version: 6.148.8
+
+['Reviewer', 'approved', 'issues', 'score', 'status', 'suggestions', '代码正确性和逻辑错误', '代码风格、可读性和最佳实践', '边界情况、错误处理和健壮性']

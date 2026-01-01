@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\precise_scroll_sync.py
+# hypothesis_version: 6.148.8
+
+[0.0, 0.01, 0.05, 0.3, 0.5, 1.0, 150, '#', '$$', '.', '>', '@0,0', '^(#{1,6})\\s+(.+)$', '^[-*_]{3,}\\s*$', '^[\\s\\|\\:\\-]+$', '_', '_textbox', '```', 'code_block', 'end', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'inf', 'list', 'list_item', 'math_block', 'paragraph', 'quote', 'sync_scroll_to', 'table', 'text', '|']

@@ -3,6 +3,8 @@
 import tkinter as tk
 import time
 
+from ui.features.precise_scroll_sync import PreciseScrollSync, IncrementalPreviewUpdater
+
 
 class PreviewSyncFeature:
     def __init__(self, app):
@@ -16,6 +18,57 @@ class PreviewSyncFeature:
         self._throttle_ms_outline = 180
         self._throttle_ms_counts = 220
         self._pending_preview_id = None
+        
+        # 精确滚动同步（延迟初始化）
+        self._precise_sync = None
+        self._incremental_updater = None
+        self._last_content_for_sync = ""
+        
+        # 行映射更新节流
+        self._last_line_map_ts = 0.0
+        self._throttle_ms_line_map = 500  # 500ms 节流
+
+    def _init_precise_sync(self):
+        """延迟初始化精确滚动同步"""
+        if self._precise_sync is not None:
+            return
+        
+        try:
+            if hasattr(self.app, 'input_editor') and hasattr(self.app, 'preview'):
+                self._precise_sync = PreciseScrollSync(
+                    self.app.input_editor,
+                    self.app.preview,
+                    self.app
+                )
+                self._incremental_updater = IncrementalPreviewUpdater(self.app.preview)
+        except Exception:
+            pass
+
+    def _update_line_map(self, content: str):
+        """更新行映射表（带节流）"""
+        now = time.monotonic()
+        min_interval = float(self._throttle_ms_line_map) / 1000.0
+        
+        # 节流检查
+        if (now - self._last_line_map_ts) < min_interval:
+            return
+        
+        # 内容无变化时跳过
+        if content == self._last_content_for_sync:
+            return
+        
+        self._last_line_map_ts = now
+        self._last_content_for_sync = content
+        
+        # 初始化精确同步（如果尚未初始化）
+        self._init_precise_sync()
+        
+        # 更新行映射
+        if self._precise_sync:
+            try:
+                self._precise_sync.build_line_map(content)
+            except Exception:
+                pass
 
     def on_text_change_debounced(self, event=None):
         """防抖版文本变化处理 - 300ms延迟"""
@@ -47,6 +100,9 @@ class PreviewSyncFeature:
                     pass
             return
         self.app._last_content_snapshot = content
+        
+        # 更新精确滚动同步的行映射
+        self._update_line_map(content)
 
         now = time.monotonic()
 
@@ -197,22 +253,64 @@ class PreviewSyncFeature:
             pass
 
     def on_editor_scroll(self, position: float):
-        """编辑器滚动时同步预览区"""
+        """编辑器滚动时同步预览区（使用精确同步）"""
         try:
-            if hasattr(self.app, 'preview') and getattr(self.app, 'preview_visible', True):
-                if hasattr(self.app.preview, 'sync_scroll_to'):
-                    self.app.preview.sync_scroll_to(position)
-                else:
-                    self.app.preview.text.yview_moveto(position)
+            if not hasattr(self.app, 'preview') or not getattr(self.app, 'preview_visible', True):
+                return
+            
+            # 初始化精确同步
+            self._init_precise_sync()
+            
+            # 优先使用精确同步
+            if self._precise_sync:
+                self._precise_sync.sync_editor_to_preview()
+            elif hasattr(self.app.preview, 'sync_scroll_to'):
+                self.app.preview.sync_scroll_to(position)
+            else:
+                self.app.preview.text.yview_moveto(position)
         except Exception:
             pass
     
     def on_preview_scroll(self, position: float):
-        """预览区滚动时同步编辑器"""
+        """预览区滚动时同步编辑器（使用精确同步）"""
         try:
-            if hasattr(self.app, 'input_editor'):
-                # 避免循环触发
-                if hasattr(self.app.input_editor, '_textbox'):
-                    self.app.input_editor._textbox.yview_moveto(position)
+            if not hasattr(self.app, 'input_editor'):
+                return
+            
+            # 初始化精确同步
+            self._init_precise_sync()
+            
+            # 优先使用精确同步
+            if self._precise_sync:
+                self._precise_sync.sync_preview_to_editor(position)
+            elif hasattr(self.app.input_editor, '_textbox'):
+                self.app.input_editor._textbox.yview_moveto(position)
         except Exception:
             pass
+    
+    def get_sync_accuracy(self) -> int:
+        """获取当前同步精确度（行数误差）"""
+        if not self._precise_sync:
+            return -1
+        
+        try:
+            # 获取编辑器当前行
+            editor_line = self._precise_sync._get_editor_first_visible_line()
+            if editor_line is None:
+                return -1
+            
+            # 获取预览区当前位置对应的行
+            if hasattr(self.app.preview, 'text'):
+                preview_pos = self.app.preview.text.yview()[0]
+                preview_line = self._precise_sync._find_source_line_from_preview(preview_pos)
+                if preview_line:
+                    return self._precise_sync.get_sync_accuracy(editor_line, preview_line)
+            
+            return -1
+        except Exception:
+            return -1
+    
+    def is_sync_accurate(self, tolerance: int = 2) -> bool:
+        """检查同步是否精确（误差在允许范围内）"""
+        accuracy = self.get_sync_accuracy()
+        return accuracy >= 0 and accuracy <= tolerance

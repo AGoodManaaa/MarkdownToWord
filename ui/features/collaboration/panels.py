@@ -227,7 +227,7 @@ class CollaborationFeature:
     
     def _register_shortcuts(self):
         try:
-            self.app.bind('<Control-Shift-C>', lambda e: self.show_dialog())
+            self.app.bind('<Control-Alt-c>', lambda e: self.show_dialog())  # 改为Ctrl+Alt+C避免与复制冲突
         except Exception:
             pass
     
@@ -791,58 +791,201 @@ class CollaborationStatusBar:
                         text_color=colors['text_secondary']).pack(side="left", padx=(-8, 0))
     
     def _show_invite_dialog(self) -> None:
+        """显示邀请对话框 - 腾讯文档风格，带二维码"""
         colors = get_colors()
         
         dialog = ctk.CTkToplevel(self.app)
         dialog.title("邀请协作")
-        dialog.geometry("420x400")
+        dialog.geometry("480x620")
         dialog.resizable(False, False)
         dialog.transient(self.app)
+        dialog.configure(fg_color=colors['background'])
         set_window_icon(dialog)
         dialog.lift()
         dialog.focus_force()
         
-        ctk.CTkLabel(dialog, text="📤 邀请他人加入",
-                    font=ctk.CTkFont(size=18, weight="bold"),
-                    text_color=colors['text']).pack(pady=20)
+        # 顶部渐变头部
+        header = ctk.CTkFrame(dialog, height=80, fg_color=colors['primary'], corner_radius=0)
+        header.pack(fill="x")
+        header.pack_propagate(False)
         
-        card = ctk.CTkFrame(dialog, fg_color=colors['surface'], corner_radius=12)
-        card.pack(pady=10, padx=25, fill="x")
+        header_content = ctk.CTkFrame(header, fg_color="transparent")
+        header_content.pack(expand=True)
         
-        ctk.CTkLabel(card, text="会议码", font=ctk.CTkFont(size=11),
-                    text_color=colors['text_secondary']).pack(pady=(15,5))
-        ctk.CTkLabel(card, text=self.feature._session_code or "",
-                    font=ctk.CTkFont(size=28, weight="bold"),
-                    text_color=colors['primary']).pack()
+        ctk.CTkLabel(header_content, text="📤",
+                    font=ctk.CTkFont(size=32)).pack(side="left", padx=10)
         
-        ctk.CTkLabel(card, text="服务器地址", font=ctk.CTkFont(size=11),
-                    text_color=colors['text_secondary']).pack(pady=(15,5))
-        ctk.CTkLabel(card, text=self.feature._server_address or "",
-                    font=ctk.CTkFont(size=12), text_color=colors['text']).pack(pady=(0,15))
+        title_frame = ctk.CTkFrame(header_content, fg_color="transparent")
+        title_frame.pack(side="left")
         
-        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        btn_frame.pack(pady=20)
+        ctk.CTkLabel(title_frame, text="邀请他人加入",
+                    font=ctk.CTkFont(size=20, weight="bold"),
+                    text_color="white").pack(anchor="w")
+        ctk.CTkLabel(title_frame, text=self.feature._meeting_name or "协作会议",
+                    font=ctk.CTkFont(size=12),
+                    text_color="#E0F2F1").pack(anchor="w")
         
-        def copy_code():
-            dialog.clipboard_clear()
-            dialog.clipboard_append(self.feature._session_code or "")
-            self.feature.show_toast("会议码已复制", 'success')
+        # 主内容区
+        content = ctk.CTkFrame(dialog, fg_color="transparent")
+        content.pack(fill="both", expand=True, padx=30, pady=20)
+        
+        # 二维码区域
+        qr_frame = ctk.CTkFrame(content, fg_color=colors['surface'], corner_radius=16,
+                               border_width=1, border_color=colors['border'])
+        qr_frame.pack(pady=10)
+        
+        # 生成二维码
+        qr_label = ctk.CTkLabel(qr_frame, text="", width=200, height=200)
+        qr_label.pack(padx=30, pady=(25, 10))
+        
+        # 尝试生成二维码
+        qr_image = self._generate_qr_code()
+        if qr_image:
+            try:
+                from PIL import ImageTk
+                photo = ImageTk.PhotoImage(qr_image.resize((180, 180)))
+                qr_label.configure(image=photo, text="")
+                qr_label._image = photo  # 保持引用
+            except Exception:
+                qr_label.configure(text="📱\n扫码加入",
+                                  font=ctk.CTkFont(size=24),
+                                  text_color=colors['text_secondary'])
+        else:
+            qr_label.configure(text="📱\n扫码加入\n(需安装 qrcode 库)",
+                              font=ctk.CTkFont(size=16),
+                              text_color=colors['text_secondary'])
+        
+        ctk.CTkLabel(qr_frame, text="扫描二维码加入会议",
+                    font=ctk.CTkFont(size=11),
+                    text_color=colors['text_secondary']).pack(pady=(0, 15))
+        
+        # 分隔线
+        divider_frame = ctk.CTkFrame(content, fg_color="transparent", height=30)
+        divider_frame.pack(fill="x", pady=5)
+        
+        ctk.CTkFrame(divider_frame, fg_color=colors['border'], height=1).place(
+            relx=0, rely=0.5, relwidth=0.4)
+        ctk.CTkLabel(divider_frame, text="或", font=ctk.CTkFont(size=11),
+                    text_color=colors['text_muted'], fg_color=colors['background']).place(
+            relx=0.5, rely=0.5, anchor="center")
+        ctk.CTkFrame(divider_frame, fg_color=colors['border'], height=1).place(
+            relx=0.6, rely=0.5, relwidth=0.4)
+        
+        # 会议信息卡片
+        info_card = ctk.CTkFrame(content, fg_color=colors['surface'], corner_radius=12,
+                                border_width=1, border_color=colors['border'])
+        info_card.pack(fill="x", pady=10)
+        
+        # 会议码
+        code_row = ctk.CTkFrame(info_card, fg_color="transparent")
+        code_row.pack(fill="x", padx=20, pady=(15, 8))
+        
+        ctk.CTkLabel(code_row, text="会议码", font=ctk.CTkFont(size=11),
+                    text_color=colors['text_secondary'], width=70).pack(side="left")
+        
+        code_value = ctk.CTkLabel(code_row, text=self.feature._session_code or "",
+                                 font=ctk.CTkFont(size=16, weight="bold"),
+                                 text_color=colors['primary'])
+        code_value.pack(side="left", padx=10)
+        
+        ctk.CTkButton(code_row, text="复制", width=50, height=26, corner_radius=13,
+                     fg_color=colors['gray_light'], text_color=colors['text'],
+                     hover_color=colors['border'], font=ctk.CTkFont(size=10),
+                     command=lambda: self._copy_to_clipboard(dialog, self.feature._session_code or "")
+                     ).pack(side="right")
+        
+        # 服务器地址
+        addr_row = ctk.CTkFrame(info_card, fg_color="transparent")
+        addr_row.pack(fill="x", padx=20, pady=(0, 15))
+        
+        ctk.CTkLabel(addr_row, text="服务器", font=ctk.CTkFont(size=11),
+                    text_color=colors['text_secondary'], width=70).pack(side="left")
+        
+        ctk.CTkLabel(addr_row, text=self.feature._server_address or "",
+                    font=ctk.CTkFont(size=12),
+                    text_color=colors['text']).pack(side="left", padx=10)
+        
+        # 底部按钮
+        btn_frame = ctk.CTkFrame(content, fg_color="transparent")
+        btn_frame.pack(pady=15)
         
         def copy_all():
             dialog.clipboard_clear()
             dialog.clipboard_append(self.feature.get_invite_text())
             self.feature.show_toast("邀请信息已复制", 'success')
         
-        ctk.CTkButton(btn_frame, text="📋 复制会议码", command=copy_code,
-                     width=130, height=36, corner_radius=18,
-                     fg_color=colors['secondary']).pack(side="left", padx=5)
+        def save_qr():
+            if qr_image:
+                from tkinter import filedialog
+                path = filedialog.asksaveasfilename(
+                    defaultextension=".png",
+                    filetypes=[("PNG 图片", "*.png")],
+                    initialname=f"邀请_{self.feature._session_code}.png"
+                )
+                if path:
+                    try:
+                        qr_image.save(path)
+                        self.feature.show_toast("二维码已保存", 'success')
+                    except Exception:
+                        self.feature.show_toast("保存失败", 'error')
+            else:
+                self.feature.show_toast("请先安装 qrcode 库", 'warning')
         
-        ctk.CTkButton(btn_frame, text="📝 复制全部", command=copy_all,
-                     width=130, height=36, corner_radius=18,
-                     fg_color=colors['primary']).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="📋 复制邀请信息", command=copy_all,
+                     width=140, height=40, corner_radius=20,
+                     fg_color=colors['primary'], hover_color=colors['primary_dark'],
+                     font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=8)
         
-        ctk.CTkLabel(dialog, text="💡 分享会议码和地址给其他人即可加入",
-                    font=ctk.CTkFont(size=11), text_color=colors['text_secondary']).pack(pady=10)
+        ctk.CTkButton(btn_frame, text="💾 保存二维码", command=save_qr,
+                     width=140, height=40, corner_radius=20,
+                     fg_color=colors['secondary'], hover_color=colors['secondary_dark'],
+                     font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=8)
+        
+        # 底部提示
+        ctk.CTkLabel(content, text="💡 分享二维码或会议码给其他人即可加入协作",
+                    font=ctk.CTkFont(size=11), text_color=colors['text_muted']).pack(pady=5)
+    
+    def _generate_qr_code(self):
+        """生成邀请二维码"""
+        try:
+            import qrcode
+            from PIL import Image
+            
+            # 构建邀请数据
+            invite_data = {
+                "type": "markdown_collab",
+                "code": self.feature._session_code,
+                "addr": self.feature._server_address,
+                "name": self.feature._meeting_name
+            }
+            
+            # 生成二维码
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_M,
+                box_size=10,
+                border=2
+            )
+            qr.add_data(json.dumps(invite_data, ensure_ascii=False))
+            qr.make(fit=True)
+            
+            # 创建带颜色的二维码
+            colors = get_colors()
+            img = qr.make_image(fill_color=colors['primary'], back_color="white")
+            
+            return img.get_image() if hasattr(img, 'get_image') else img
+            
+        except ImportError:
+            return None
+        except Exception:
+            return None
+    
+    def _copy_to_clipboard(self, window, text: str):
+        """复制到剪贴板"""
+        window.clipboard_clear()
+        window.clipboard_append(text)
+        self.feature.show_toast("已复制", 'success')
+
 
     def _show_members_panel(self) -> None:
         colors = get_colors()

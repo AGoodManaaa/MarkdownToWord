@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\incremental_renderer.py
+# hypothesis_version: 6.148.8
+
+[0.5, 100, 1000, '1.0', '^#{1,6}\\s', '^>\\s', '^[-*_]{3,}\\s*$', '^\\|.*\\|', '^```', '^```\\s*$', 'avg', 'avg_render_time_ms', 'blockquote', 'cache_blocks', 'code', 'code_end', 'code_start', 'end-1c', 'full_renders', 'heading', 'hr', 'incremental_renders', 'input_latency', 'list', 'loaded', 'loading', 'max', 'memory_usage', 'min', 'pending', 'render_time', 'samples', 'scroll_time', 'table', 'text', 'total_lines', 'total_renders', 'utf-8', '⏳', '❌']

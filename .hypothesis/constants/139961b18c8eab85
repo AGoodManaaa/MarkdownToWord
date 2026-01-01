@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\collaboration\comment_panel.py
+# hypothesis_version: 6.148.8
+
+[240, 280, 400, '#10b981', '#1f2937', '#3b82f6', '#45B7D1', '#4ECDC4', '#6b7280', '#9ca3af', '#d1fae5', '#dbeafe', '#e5e7eb', '#ef4444', '#f3f4f6', '#f59e0b', '#f9fafb', '#ffffff', '%m-%d %H:%M', '200x50', '380x600', '<Button-1>', '<FocusOut>', '<Return>', 'CommentData', 'all', 'background', 'bold', 'border', 'both', 'bottom', 'color', 'danger', 'document_range', 'emoji', 'left', 'mine', 'name', 'primary', 'primary_light', 'right', 'secondary', 'secondary_light', 'surface', 'surface_hover', 'text', 'text_muted', 'text_secondary', 'transparent', 'unresolved', 'user', 'w', 'warning', 'white', 'x', '✅', '✅ 已解决', '✓', '❤️', '全部', '关注', '写回复...', '发送', '完成', '庆祝', '开心', '思考', '我', '我的', '暂无评论', '未解决', '火热', '爱心', '赞', '🎉', '👀', '👍', '💡 选中文本后右键添加评论', '💬 回复', '💬 评论', '🔥', '😄', '😊', '🤔']

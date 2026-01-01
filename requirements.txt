@@ -22,3 +22,4 @@ networkx>=3.0
 websockets>=11.0
 darkdetect>=0.8.0
 cryptography>=41.0.0
+qrcode[pil]>=7.4

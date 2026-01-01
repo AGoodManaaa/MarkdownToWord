@@ -248,7 +248,7 @@ class App(ctk.CTk):
         self.bind('<Control-Shift-p>', lambda e: self.show_print_preview())  # 打印预览
         self.bind('<Control-Shift-o>', lambda e: self.show_ocr())  # OCR 功能
         self.bind('<Control-Shift-d>', lambda e: self.show_database())  # 文档库
-        self.bind('<Control-Shift-c>', lambda e: self.show_collaboration())  # 协作
+        self.bind('<Control-Alt-c>', lambda e: self.show_collaboration())  # 协作 (改为Ctrl+Alt+C避免与复制冲突)
         
         # 绑定窗口关闭事件
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -277,28 +277,11 @@ class App(ctk.CTk):
     def _setup_undo_system(self):
         """设置撤销系统"""
         try:
-            print("=" * 50)
-            print("开始设置撤销系统...")
-            print(f"hasattr(self, 'undo_redo'): {hasattr(self, 'undo_redo')}")
-            print(f"hasattr(self, 'input_text'): {hasattr(self, 'input_text')}")
-            
             if hasattr(self, 'undo_redo') and hasattr(self, 'input_text'):
-                print(f"hasattr(self.input_text, '_textbox'): {hasattr(self.input_text, '_textbox')}")
                 if hasattr(self.input_text, '_textbox'):
                     self.undo_redo.setup(self.input_text._textbox)
-                    print("✅ 撤销系统已设置")
-                    print(f"撤销管理器启用状态: {self.undo_redo.undo_manager.enabled if self.undo_redo.undo_manager else 'None'}")
-                else:
-                    print("❌ input_text 没有 _textbox 属性")
-                    # 尝试查找其他可能的属性
-                    print(f"input_text 的属性: {dir(self.input_text)}")
-            else:
-                print("❌ undo_redo 或 input_text 不存在")
-            print("=" * 50)
-        except Exception as e:
-            print(f"⚠️ 撤销系统设置失败: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
+            pass
     
     def _init_editor_enhancements(self):
         """初始化编辑器增强功能"""
@@ -395,7 +378,7 @@ class App(ctk.CTk):
             (get_toolbar_icon("version"), "版本", self.show_version_control, ""),
             (get_toolbar_icon("link"), "链接", self.show_link_checker, ""),
             (get_toolbar_icon("database"), "文档库", self.show_database, "Ctrl+Shift+D"),
-            (get_toolbar_icon("collab"), "协作", self.show_collaboration, "Ctrl+Shift+C"),
+            (get_toolbar_icon("collab"), "协作", self.show_collaboration, "Ctrl+Alt+C"),
         ]
         
         self.preview_btn = None
@@ -835,6 +818,9 @@ class App(ctk.CTk):
             on_scroll=self._on_preview_scroll
         )
         self.preview.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        
+        # 设置预览区双击跳转回调
+        self.preview.set_jump_callback(self._jump_to_line)
         
         # 底部操作按钮
         btn_frame = ctk.CTkFrame(self.preview_card, fg_color="transparent", height=45)
@@ -1407,13 +1393,39 @@ class App(ctk.CTk):
         self.file_ops.open_recent_file(file_path)
     
     def _jump_to_line(self, line_number: int):
-        """跳转到指定行"""
+        """跳转到指定行并高亮显示"""
         try:
             # 设置光标位置
             index = f"{line_number}.0"
             self.input_text._textbox.see(index)
             self.input_text._textbox.mark_set("insert", index)
             self.input_text._textbox.focus()
+            
+            # 高亮显示跳转的行（短暂闪烁效果）
+            self._highlight_editor_line(line_number)
+        except Exception:
+            pass
+    
+    def _highlight_editor_line(self, line_number: int):
+        """短暂高亮编辑器中的行"""
+        try:
+            text_widget = self.input_text._textbox
+            
+            # 配置高亮标签
+            text_widget.tag_configure('jump_highlight', background='#fef3c7')
+            
+            # 添加高亮
+            text_widget.tag_add('jump_highlight', f"{line_number}.0", f"{line_number}.end")
+            
+            # 300ms 后移除高亮
+            self.after(300, lambda: self._remove_editor_highlight(line_number))
+        except Exception:
+            pass
+    
+    def _remove_editor_highlight(self, line_number: int):
+        """移除编辑器行高亮"""
+        try:
+            self.input_text._textbox.tag_remove('jump_highlight', f"{line_number}.0", f"{line_number}.end")
         except Exception:
             pass
 
@@ -1507,19 +1519,10 @@ class App(ctk.CTk):
     
     def _undo(self):
         """撤销操作"""
-        print("\n调用 _undo()")
-        print(f"hasattr(self, 'undo_redo'): {hasattr(self, 'undo_redo')}")
-        if hasattr(self, 'undo_redo'):
-            print(f"undo_redo.undo_manager: {self.undo_redo.undo_manager}")
-            if self.undo_redo.undo_manager:
-                print(f"undo_manager.enabled: {self.undo_redo.undo_manager.enabled}")
-                print(f"可撤销次数: {self.undo_redo.undo_manager.get_undo_count()}")
-        
         # 使用新的撤销系统
         if hasattr(self, 'undo_redo') and self.undo_redo.undo_manager:
             self.undo_redo.undo()
         else:
-            print("降级使用原生undo")
             # 降级使用原生undo（如果新系统未初始化）
             try:
                 if hasattr(self, 'input_text') and hasattr(self.input_text, '_textbox'):

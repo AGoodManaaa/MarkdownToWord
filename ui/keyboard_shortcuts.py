@@ -38,6 +38,11 @@ class KeyboardShortcutsManager:
         '<F1>': 'show_help',
         '<F11>': 'focus_mode.toggle',
         '<F12>': 'reading_mode.toggle',
+        '<Control-F11>': 'toggle_fullscreen_preview',
+        '<Control-Shift-p>': 'show_print_preview',
+        '<Control-Shift-o>': 'show_ocr',
+        '<Control-Shift-d>': 'show_database',
+        '<Control-Alt-c>': 'show_collaboration',  # 协作功能使用 Ctrl+Alt+C 避免与复制冲突
     }
     
     def __init__(self, app):

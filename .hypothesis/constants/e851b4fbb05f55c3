@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\collaboration\chat.py
+# hypothesis_version: 6.148.8
+
+[0.1, 0.7, 1.0, 220, '#10b981', '#4ECDC4', '%H:%M', '360x280', '<KeyRelease>', '<Return>', '?', '@', '@(\\w+)', 'ChatMessage', 'background', 'background_secondary', 'bold', 'border', 'both', 'bottom', 'color', 'content', 'e', 'end', 'insert', 'left', 'mentions', 'primary', 'primary_dark', 'primary_light', 'right', 'self', 'sender_id', 'sender_name', 'surface', 'surface_hover', 'sw', 'text', 'text_muted', 'text_secondary', 'timestamp', 'transparent', 'w', 'white', 'x', '✌️', '❤️', '发送', '我', '输入消息，@提及他人...', '选择表情', '👍', '👎', '👏', '💙', '💚', '💛', '💜', '💬 聊天', '🖤', '😀', '😁', '😂', '😃', '😄', '😅', '😆', '😇', '😉', '😊', '😊 表情', '😋', '😍', '😏', '😐', '😑', '😒', '😖', '😘', '😛', '😜', '😝', '😢', '😣', '😥', '😦', '😧', '😨', '😬', '😭', '😮', '😯', '😰', '😱', '😲', '😳', '😶', '🙂', '🙄', '🙌', '🙏', '🤍', '🤐', '🤑', '🤔', '🤗', '🤝', '🤞', '🤣', '🤩', '🤪', '🤭', '🥰', '🥺', '🧡']

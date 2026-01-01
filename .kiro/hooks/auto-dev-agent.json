@@ -1,0 +1,31 @@
+{
+  "name": "Auto Dev Agent",
+  "description": "Actor-Reviewer 自动化开发代理，自动迭代改进代码",
+  "version": "1.0.0",
+  "hooks": [
+    {
+      "id": "start-auto-dev",
+      "name": "🚀 启动自动开发",
+      "description": "启动 Actor-Reviewer 自动开发流程",
+      "trigger": {
+        "type": "manual"
+      },
+      "action": {
+        "type": "send-message",
+        "message": "请作为 Auto Dev Agent 启动。你现在扮演一个开发系统，包含1个Actor和3个Reviewer。\n\n**工作流程：**\n1. Actor 根据任务生成代码\n2. 3个Reviewer分别从【正确性】【代码风格】【健壮性】角度审查\n3. 如果有问题，Actor根据反馈修改\n4. 重复直到所有Reviewer通过或达到最大迭代次数\n\n**请等待用户输入任务描述...**"
+      }
+    },
+    {
+      "id": "auto-iterate",
+      "name": "🔄 自动迭代",
+      "description": "自动执行一轮 Actor-Reviewer 迭代",
+      "trigger": {
+        "type": "manual"
+      },
+      "action": {
+        "type": "send-message",
+        "message": "继续自动迭代。请执行以下步骤：\n\n1. **Actor**: 根据上一轮反馈修改代码\n2. **Reviewer 1 (正确性)**: 检查逻辑错误和bug\n3. **Reviewer 2 (风格)**: 检查代码规范和可读性\n4. **Reviewer 3 (健壮性)**: 检查边界情况和错误处理\n\n如果所有Reviewer都通过，输出最终代码。否则汇总问题继续下一轮。"
+      }
+    }
+  ]
+}

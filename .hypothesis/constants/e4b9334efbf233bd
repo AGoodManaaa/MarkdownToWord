@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\collaboration\notifications.py
+# hypothesis_version: 6.148.8
+
+[1.0, 240, 260, 320, 340, 3600, 4000, 86400, '#10b981', '#1f2937', '#3b82f6', '#6b7280', '#9ca3af', '#e5e7eb', '#ef4444', '#f3f4f6', '#f59e0b', '#f9fafb', '#ffffff', '%m-%d %H:%M', '360x480', '<Button-1>', '@', 'alert', 'background', 'bold', 'border', 'both', 'color', 'comment', 'comment_new', 'comment_reply', 'edit_conflict', 'end', 'icon', 'join', 'left', 'meeting_end', 'mention', 'network_issue', 'primary', 'reply', 'right', 'sound', 'surface', 'surface_hover', 'text', 'text_muted', 'text_secondary', 'title', 'transparent', 'user_join', 'user_leave', 'version_saved', 'w', 'x', 'y', '×', '●', '⚠️', '✅', '会议结束', '全部已读', '刚刚', '新回复', '新评论', '暂无通知', '有人@你', '版本已保存', '用户加入', '用户离开', '编辑冲突', '网络问题', '通知', '👋', '💬', '📢', '📶', '🔔 通知', '🔚']

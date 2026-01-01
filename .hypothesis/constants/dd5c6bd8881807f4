@@ -1,0 +1,4 @@
+# file: D:\Code\转换\ui\features\smart_editing.py
+# hypothesis_version: 6.148.8
+
+[' */', ' -->', ' [ ]', '"', '# ', '#fee2e2', '#fef3c7', "'", '(', ')', '*', '+', '-- ', '-1c', '.', '/* ', '// ', '1.0', ':', '<!-- ', '<BackSpace>', '<ButtonRelease-1>', '<Control-/>', '<Control-slash>', '<KeyPress>', '<KeyRelease>', '<Return>', '<Shift-Tab>', '<Tab>', '[', ']', '^(\\s*)', '^(\\s*)([-*+])\\s+', '^(\\s*)(\\d+)\\.\\s+', '_', '_textbox', '`', '```', 'auto_close_brackets', 'bash', 'bracket_match', 'bracket_mismatch', 'break', 'c', 'cpp', 'csharp', 'css', 'end', 'go', 'highlight_brackets', 'html', 'indent_size', 'insert', 'java', 'javascript', 'ordered', 'php', 'python', 'ruby', 'rust', 'sel', 'sel.first', 'sel.last', 'shell', 'sql', 'task', 'typescript', 'unordered', 'use_tabs', 'xml', '{', '}', '~', '‘', '’', '“', '”', '〈', '〉', '《', '》', '「', '」', '『', '』', '【', '】', '（', '）']

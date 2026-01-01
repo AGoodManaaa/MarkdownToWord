@@ -16,8 +16,8 @@ def build():
         '--noconfirm',  # 不确认覆盖
         '--windowed',  # 窗口模式（无控制台）
         '--clean',  # 清理临时文件
-        # '--onefile',  # 单文件模式 (启动较慢但只有一个exe，建议先用目录模式调试)
-        '--onedir', # 目录模式 (启动快，排错容易)
+        '--onefile',  # 单文件模式 (分发更方便，通过QQ/微信发送只需一个文件)
+        # '--onedir', # 目录模式 (启动快，排错容易)
         
         # 隐藏导入 (根据项目依赖添加)
         '--hidden-import=PIL._tkinter_finder',
