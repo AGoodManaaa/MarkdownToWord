@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\template_manager.py
-# hypothesis_version: 6.148.8
-
-[100, 140, 200, '#059669', '#10B981', '#4B5563', '#6B7280', '#9CA3AF', '#DC2626', '#EF4444', '#FFFFFF', '*.*', '*.dotx', '.dotx', '700x500', 'Word文档模板管理', 'Word模板', 'bg_card', 'bold', 'both', 'left', 'right', 'text', 'transparent', 'w', 'word_template', 'word_templates', 'x', '↺ 恢复默认', '✅ 已恢复默认样式', '关闭', '已导入的模板:', '当前模板', '当前模板: 默认样式', '成功', '所有文件', '提示', '暂无自定义模板', '模板已删除', '确认', '确认删除', '请先选择要删除的模板！', '选择Word模板文件', '错误', '默认样式（内置）', '📄 Word模板管理', '📥 导入模板', '🗑️ 删除模板']

@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\editor_zoom.py
-# hypothesis_version: 6.148.8
-
-[0.01, 0.1, 0.5, 1.0, 1.5, '+', '100%', '<Control-Button-4>', '<Control-Button-5>', '<Control-MouseWheel>', 'Consolas', 'bg_card', 'bold', 'border', 'break', 'editor_zoom_scale', 'highlight', 'input_text', 'left', 'text_primary', 'text_secondary', 'transparent', '↺', '−', '放大编辑区', '缩小编辑区', '重置缩放']

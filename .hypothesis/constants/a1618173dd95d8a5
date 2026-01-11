@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\preview_zoom.py
-# hypothesis_version: 6.148.8
-
-[0.01, 0.1, 0.5, 1.0, 1.5, '+', '1.0', '100%', '<Control-0>', '<Control-Button-4>', '<Control-Button-5>', '<Control-MouseWheel>', '<Control-equal>', '<Control-minus>', 'bg_card', 'bold', 'border', 'break', 'end-1c', 'highlight', 'left', 'out', 'preview', 'preview_zoom_scale', 'text_primary', 'text_secondary', 'transparent', '↺', '−', '放大预览 (Ctrl+=)', '缩小预览 (Ctrl+-)', '重置缩放 (Ctrl+0)']

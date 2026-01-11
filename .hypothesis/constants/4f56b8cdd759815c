@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\collaboration\history.py
-# hypothesis_version: 6.148.8
-
-[1000, '+', '+++', '-', '---', '@@', 'HistoryEntry', 'add', 'author_id', 'author_name', 'content', 'content_after', 'content_before', 'entries', 'id', 'operation_type', 'range', 'remove', 'snapshots', 'timestamp', 'type', 'unchanged', 'utf-8']

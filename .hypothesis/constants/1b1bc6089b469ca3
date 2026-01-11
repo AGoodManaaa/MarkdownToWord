@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\collaboration\comments.py
-# hypothesis_version: 6.148.8
-
-['# 评论', 'Comment', 'CommentThread', 'author_id', 'author_name', 'comments', 'content', 'created_at', 'document_range', 'id', 'replies', 'resolved', '✅ 已解决', '💬 进行中']

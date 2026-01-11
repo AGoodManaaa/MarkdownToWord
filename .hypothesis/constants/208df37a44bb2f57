@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\keyboard_shortcuts.py
-# hypothesis_version: 6.148.8
-
-['.', ':', '<Control-Shift-c>', '<Control-Shift-f>', '<Control-Shift-s>', '<Control-Shift-z>', '<Control-b>', '<Control-f>', '<Control-h>', '<Control-j>', '<Control-k>', '<Control-minus>', '<Control-o>', '<Control-p>', '<Control-plus>', '<Control-s>', '<Control-y>', '<Control-z>', '<F11>', '<F12>', '<F1>', '_redo', '_undo', 'change_font_size:-1', 'change_font_size:1', 'command_palette.show', 'copy_to_clipboard', 'export_to_word', 'focus_mode.toggle', 'format_markdown', 'open_file', 'reading_mode.toggle', 'save_file', 'shortcuts', 'show_export_history', 'show_help', 'show_search_dialog', 'toggle_preview', 'toggle_sidebar']

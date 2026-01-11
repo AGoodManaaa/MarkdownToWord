@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\pdf_export.py
-# hypothesis_version: 6.148.8
-
-['*.*', '*.pdf', '.pdf', '1.0', 'A4', 'PDF 文件', 'Word 未安装', 'Word.Application', 'end-1c', 'page_size', 'untitled.pdf', '❌ PDF 导出失败', '导出为 PDF', '导出失败', '导出成功', '所有文件', '提示', '无法创建', '没有可导出的内容', '缺少依赖', '转换失败', '📄 正在导出 PDF...']

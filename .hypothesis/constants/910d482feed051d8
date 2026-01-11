@@ -1,4 +1,0 @@
-# file: D:\Code\转换\auto_dev_agent\orchestrator.py
-# hypothesis_version: 6.148.8
-
-['\nActor 正在根据反馈修改代码...', 'Actor 正在生成初始代码...', 'completed', 'in_progress', '✓', '✗']

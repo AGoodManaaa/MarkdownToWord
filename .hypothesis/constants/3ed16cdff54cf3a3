@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\database\search.py
-# hypothesis_version: 6.148.8
-
-[1.0, 150, ' OR ', '"([^"]+)"', '%', '*', '-', '?', 'AND', 'NOT', 'OR', '\\w+', '_', 'content', 'id', 'must', 'must_not', 'name', 'path', 'phrases', 'score', 'should', 'title']

@@ -1,4 +1,0 @@
-# file: D:\Code\转换\auto_dev_agent\command_executor.py
-# hypothesis_version: 6.148.8
-
-[':\\(\\)\\{:\\|:&\\};:', '>\\s*/dev/sd', 'chmod\\s+-R\\s+777\\s+/', 'chown\\s+-R.*\\s+/', 'curl.*\\|\\s*sh', 'dd\\s+if=', 'del\\s+/[fqs]\\s+', 'format\\s+[a-z]:', 'mkfs\\.', 'rm\\s+-rf\\s+/', 'rm\\s+-rf\\s+\\*', 'rm\\s+-rf\\s+~', 'wget.*\\|\\s*sh']

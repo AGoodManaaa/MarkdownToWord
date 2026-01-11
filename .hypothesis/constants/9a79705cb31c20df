@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\help_dialog.py
-# hypothesis_version: 6.148.8
-
-[100, 120, 400, 450, '400x450', 'Ctrl++/-', 'Ctrl+B', 'Ctrl+F', 'Ctrl+K', 'Ctrl+O', 'Ctrl+P', 'Ctrl+S', 'Ctrl+Shift+C', 'Ctrl+Shift+S', 'Ctrl+Y', 'Ctrl+Z', 'F1', 'bg_card', 'bold', 'both', 'help_dialog', 'left', 'primary', 'text_primary', 'text_secondary', 'transparent', 'w', 'x', '⌨️ 快捷键说明', '保存Markdown文件', '切换侧边栏', '切换预览', '命令面板', '复制到剪贴板', '导出为Word文档', '快捷键说明', '打开文件', '搜索替换', '撤销', '显示此帮助', '确定', '调整字体大小', '重做']

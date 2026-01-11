@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\collaboration\version_history.py
-# hypothesis_version: 6.148.8
-
-[1024, '%m-%d %H:%M', '1.0', '500x600', '600x500', 'DocumentVersion', 'author_id', 'author_name', 'background', 'background_secondary', 'bold', 'both', 'content', 'content_hash', 'description', 'disabled', 'gray_light', 'left', 'primary', 'primary_dark', 'right', 'surface', 'surface_hover', 'text', 'text_muted', 'text_secondary', 'timestamp', 'transparent', 'utf-8', 'version_id', 'version_manager', 'w', 'word', 'x', '恢复', '文档修改后会自动保存版本', '暂无版本历史', '确认恢复', '👁', '📜 版本历史', '📭']

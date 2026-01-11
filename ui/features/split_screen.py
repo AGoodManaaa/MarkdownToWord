@@ -5,6 +5,8 @@ import tkinter as tk
 from typing import Optional, Callable
 from enum import Enum
 
+from ui.theme import save_config  # 用于持久化分屏配置
+
 try:
     import customtkinter as ctk
 except ImportError:
@@ -25,14 +27,14 @@ class SplitScreenManager:
     def __init__(self, app):
         """
         初始化分屏管理器
-        
         Args:
             app: 主应用实例
         """
         self.app = app
-        self._current_mode = SplitMode.HORIZONTAL
-        self._editor_weight = 3
-        self._preview_weight = 2
+        self._current_mode = SplitMode(app.config.get('split_mode', SplitMode.HORIZONTAL.value))
+        self._editor_weight = max(1, int(app.config.get('split_editor_weight', 3)))
+        self._preview_weight = max(1, int(app.config.get('split_preview_weight', 2)))
+        self._min_pane = 280  # 预览/编辑最小宽度，避免过窄
     
     @property
     def current_mode(self) -> SplitMode:
@@ -51,67 +53,63 @@ class SplitScreenManager:
         """应用当前分屏模式"""
         mode = self._current_mode
         
-        # 获取主框架和组件
-        main_frame = self.app.main_frame
-        input_card = self.app.input_card
-        preview_card = self.app.preview_card
+        # 获取 PanedWindow 和组件
+        paned = getattr(self.app, "paned_window", None)
+        input_card = getattr(self.app, "input_card", None)
+        preview_card = getattr(self.app, "preview_card", None)
+        if paned is None or input_card is None or preview_card is None:
+            return
         
-        # 先移除所有组件
-        input_card.grid_forget()
-        preview_card.grid_forget()
-        
-        # 重置列/行配置
-        for i in range(2):
-            main_frame.grid_columnconfigure(i, weight=0)
-            main_frame.grid_rowconfigure(i, weight=0)
+        # 清理后重新添加，确保顺序正确
+        try:
+            for pane in list(paned.panes()):
+                paned.forget(pane)
+        except Exception:
+            pass
         
         if mode == SplitMode.HORIZONTAL:
-            # 左右分屏
-            main_frame.grid_columnconfigure(0, weight=self._editor_weight)
-            main_frame.grid_columnconfigure(1, weight=self._preview_weight)
-            main_frame.grid_rowconfigure(0, weight=1)
-            
-            input_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-            preview_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
-            
+            paned.configure(orient=tk.HORIZONTAL)
+            paned.add(input_card, minsize=self._min_pane, stretch="always")
+            paned.add(preview_card, minsize=self._min_pane, stretch="always")
             self.app.preview_visible = True
             self.app.update_status("📐 左右分屏模式")
         
         elif mode == SplitMode.VERTICAL:
-            # 上下分屏
-            main_frame.grid_columnconfigure(0, weight=1)
-            main_frame.grid_rowconfigure(0, weight=self._editor_weight)
-            main_frame.grid_rowconfigure(1, weight=self._preview_weight)
-            
-            input_card.grid(row=0, column=0, sticky="nsew", pady=(0, 8))
-            preview_card.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
-            
+            paned.configure(orient=tk.VERTICAL)
+            paned.add(input_card, minsize=self._min_pane, stretch="always")
+            paned.add(preview_card, minsize=self._min_pane, stretch="always")
             self.app.preview_visible = True
             self.app.update_status("📐 上下分屏模式")
         
         elif mode == SplitMode.EDITOR_ONLY:
-            # 仅编辑器
-            main_frame.grid_columnconfigure(0, weight=1)
-            main_frame.grid_rowconfigure(0, weight=1)
-            
-            input_card.grid(row=0, column=0, sticky="nsew")
-            
+            paned.configure(orient=tk.HORIZONTAL)
+            paned.add(input_card, minsize=self._min_pane, stretch="always")
             self.app.preview_visible = False
             self.app.update_status("📝 纯编辑模式")
         
         elif mode == SplitMode.PREVIEW_ONLY:
-            # 仅预览
-            main_frame.grid_columnconfigure(0, weight=1)
-            main_frame.grid_rowconfigure(0, weight=1)
-            
-            preview_card.grid(row=0, column=0, sticky="nsew")
-            
+            paned.configure(orient=tk.HORIZONTAL)
+            paned.add(preview_card, minsize=self._min_pane, stretch="always")
             self.app.preview_visible = True
             self.app.update_status("👁 纯预览模式")
+        
+        # 恢复分屏比例
+        self._restore_ratio(paned)
         
         # 刷新预览
         if self.app.preview_visible:
             self.app.on_text_change(None)
+        
+        # 持久化模式
+        try:
+            self.app.config['split_mode'] = mode.value
+            self.app.config['split_editor_weight'] = self._editor_weight
+            self.app.config['split_preview_weight'] = self._preview_weight
+            save_cfg = getattr(self.app, "save_config", None)
+            if callable(save_cfg):
+                save_cfg()
+        except Exception:
+            pass
     
     def toggle_mode(self):
         """循环切换分屏模式"""
@@ -141,6 +139,31 @@ class SplitScreenManager:
         self._editor_weight = max(1, editor_weight)
         self._preview_weight = max(1, preview_weight)
         self._apply_mode()
+    
+    # ---- 内部工具 ----
+    def _restore_ratio(self, paned: tk.PanedWindow):
+        """按保存的比例恢复分屏"""
+        try:
+            ratio = float(self.app.config.get('split_ratio', 0.5))
+        except Exception:
+            ratio = 0.5
+        
+        try:
+            if self._current_mode == SplitMode.VERTICAL:
+                height = max(1, paned.winfo_height())
+                paned.after(80, lambda: self._safe_place_sash(paned, 0, 0, int(height * ratio)))
+            elif len(paned.panes()) == 2:
+                width = max(1, paned.winfo_width())
+                paned.after(80, lambda: self._safe_place_sash(paned, 0, int(width * ratio), 0))
+        except Exception:
+            pass
+    
+    def _safe_place_sash(self, paned: tk.PanedWindow, index: int, x: int, y: int):
+        """防止异常的 sash_place 封装"""
+        try:
+            paned.sash_place(index, x, y)
+        except Exception:
+            pass
 
 
 class FullScreenPreview:

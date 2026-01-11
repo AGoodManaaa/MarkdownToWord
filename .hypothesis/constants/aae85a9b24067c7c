@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\ocr\dialog.py
-# hypothesis_version: 6.148.8
-
-[1.0, 100, 120, 150, 200, 300, 400, 600, 800, '#15803d', '#16a34a', '#1d4ed8', '#2563eb', '#2b2b2b', '#888888', '*.*', '*.md', '.md', '1.0', '1000x700', '<Configure>', 'Consolas', 'CustomTkinter 未安装', 'Image.Image', 'Markdown 文件', 'Microsoft YaHei', 'bold', 'both', 'disabled', 'end', 'end-1c', 'image', 'input_text', 'insert', 'left', 'normal', 'nsew', 'placeholder', 'right', 'transparent', 'utf-8', 'w', 'word', 'x', '保存 Markdown', '公式识别', '剪贴板中没有图片', '加载错误', '图片文件', '就绪', '已从剪贴板加载图片', '已复制到剪贴板', '已插入到文档', '所有文件', '拖拽图片到此处\n或点击上方按钮导入', '正在识别...', '没有可保存的内容', '没有可复制的内容', '没有可插入的内容', '表格识别', '识别中...', '识别错误', '请先导入图片', '选择图片', '选择多张图片', '部分失败', '错误', '💾 保存', '📁 批量导入', '📂 打开文件', '📋 复制', '📋 粘贴', '📝 识别结果', '📥 插入到文档', '📷 OCR 图片转 Markdown', '📷 图片预览', '🔍 开始识别']

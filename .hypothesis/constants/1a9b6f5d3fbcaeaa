@@ -1,4 +1,0 @@
-# file: D:\Code\转换\auto_dev_agent\chat_interface.py
-# hypothesis_version: 6.148.8
-
-['\n\n**需要执行的命令:**\n', '\n\n选项:\n', '\n**Reviewer 状态:**\n', '\n**建议:**\n', '\n**问题:**\n', 'code', 'commands', 'consensus', 'iteration', 'language', 'options', 'phase', 'progress', 'prompt', 'python', 'review', 'reviewer_type', 'score', 'status', 'text', 'yes', '✅', '❌', '所有 Reviewer 已通过！\n', '需要继续改进...\n', '🎉', '🔄']

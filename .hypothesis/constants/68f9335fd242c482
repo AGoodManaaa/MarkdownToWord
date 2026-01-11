@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\toc_generator.py
-# hypothesis_version: 6.148.8
-
-[120, 150, 300, 400, '## 目录', '-', '1.0', '400x300', '<!-- 未找到标题 -->', '<!-- 未找到符合条件的标题 -->', 'App', 'Consolas', '\\s+', '^(#{1,6})\\s+(.+)$', 'anchor', 'bold', 'both', 'bullet', 'disabled', 'end', 'end-1c', 'gray', 'insert', 'left', 'level', 'line', 'numbered', 'right', 'text', 'transparent', 'w', 'x', '取消', '当前文档没有找到标题', '提示', '插入目录', '无序列表 (- )', '有序列表 (1. )', '目录样式：', '错误', '预览：', '📑 目录生成设置']

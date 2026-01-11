@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\collaboration\crdt.py
-# hypothesis_version: 6.148.8
-
-[0.0, 'CRDTChar', 'CRDTOperation', 'author', 'content', 'delete', 'document', 'id', 'insert', 'length', 'position', 'sequence', 'site_id', 'timestamp', 'type', 'vector_clock']

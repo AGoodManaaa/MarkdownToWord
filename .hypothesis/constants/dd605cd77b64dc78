@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\undo_redo.py
-# hypothesis_version: 6.148.8
-
-[100, '1.0', '<<Modified>>', '<KeyRelease>', 'TextOperation', '[BATCH] 取消批量操作', '[BATCH] 开始批量操作模式', '[BATCH] 结束批量操作，无操作记录', '[SETUP] 事件绑定完成', '[SETUP] 已禁用原生undo', '[SETUP] 开始设置撤销系统...', '[SETUP] 撤销系统设置完成', '[SETUP] 方法包装完成', '[SETUP] 绑定键盘事件...', '_last_content', 'batch', 'delete', 'end-1c', 'insert', 'on_text_change', 'text_widget', 'undo', '撤销/重做未初始化', '撤销历史已清空', '无法撤销', '无法重做']

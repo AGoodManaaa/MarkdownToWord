@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\collaboration\mentions.py
-# hypothesis_version: 6.148.8
-
-['@(\\w+)', 'assignee_id', 'author_id', 'completed', 'completed_at', 'context', 'created_at', 'creator_id', 'description', 'id', 'mention', 'mentioned_id', 'position', 'read', 'task_completed', 'x']

@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\auto_save.py
-# hypothesis_version: 6.148.8
-
-[600, 30000, '1.0', 'end', 'end-1c', 'md2word_autosave.md', 'r', 'utf-8', 'w', '✅ 已恢复自动保存的内容', '发现上次未保存的内容，是否恢复？', '恢复自动保存']

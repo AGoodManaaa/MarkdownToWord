@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\folder_view.py
-# hypothesis_version: 6.148.8
-
-['\n\n⚠️ 这将删除文件夹及其所有内容！', '.', '.css', '.gif', '.git', '.htm', '.html', '.jpeg', '.jpg', '.js', '.json', '.markdown', '.md', '.png', '.py', '.svg', '.text', '.txt', '.venv', '1.0', '<Button-1>', '<Button-3>', '<Double-Button-1>', '<Enter>', '<Leave>', 'Darwin', 'FileNode', 'Windows', '__pycache__', 'bg_sidebar', 'bold', 'border', 'both', 'css', 'default', 'end', 'fg_color', 'folder', 'folder_open', 'gray', 'highlight', 'html', 'image', 'js', 'json', 'left', 'md', 'node_modules', 'open', 'primary', 'py', 'r', 'right', 'tab_manager', 'text_primary', 'text_secondary', 'transparent', 'txt', 'utf-8', 'venv', 'w', 'x', 'xdg-open', '⊟', '▶', '▼', '⚡', '新建文件', '新建文件夹', '点击 📂 打开文件夹', '确认删除', '输入文件名:', '输入文件夹名:', '选择文件夹', '错误', '🌐', '🎨', '🐍', '📁', '📁 文件夹', '📁 新建文件夹', '📂', '📂 在资源管理器中打开', '📂 在资源管理器中显示', '📄', '📄 新建文件', '📋', '📋 复制文件名', '📋 复制路径', '📝', '📝 打开', '🔄', '🔄 刷新', '🖼️', '🗑️ 删除']

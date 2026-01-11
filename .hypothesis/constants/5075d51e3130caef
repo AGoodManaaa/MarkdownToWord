@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\image_downloader.py
-# hypothesis_version: 6.148.8
-
-[8192, '.bmp', '.gif', '.img', '.jpeg', '.jpg', '.png', '.svg', '.webp', 'Content-Type', 'ImageCache', 'image/bmp', 'image/gif', 'image/jpeg', 'image/png', 'image/svg+xml', 'image/webp', 'wb']

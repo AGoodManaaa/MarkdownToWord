@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\database\metadata.py
-# hypothesis_version: 6.148.8
-
-['%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%Y/%m/%d', '%Y/%m/%d %H:%M:%S', "'created' 日期格式无效", "'modified' 日期格式无效", "'tags' 中的所有项必须是字符串", "'tags' 必须是列表", "'title' 必须是字符串", 'author', 'created', 'modified', 'tags', 'title']

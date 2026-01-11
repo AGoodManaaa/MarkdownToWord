@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\autocomplete.py
-# hypothesis_version: 6.148.8
-
-['!', '![图片说明](url)', '#', '# ', '## ', '### ', '#### ', '##### ', '###### ', '(', '-', '- ', '- [ ] ', '-topmost', '<FocusOut>', '<Key>', '>', '> ', 'Empty', '[', '[链接文字](url)', '`', '```', '```bash\n\n```', '```css\n\n```', '```html\n\n```', '```javascript\n\n```', '```python\n\n```', '```sql\n\n```', 'black', 'both', 'gray80', 'gray90', 'input_text', 'transparent', 'w', 'x']

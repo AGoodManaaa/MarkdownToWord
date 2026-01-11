@@ -376,6 +376,10 @@ class App(ctk.CTk):
             (get_toolbar_icon("format"), "规范化", self.format_markdown, "Ctrl+Shift+F"),
             (get_toolbar_icon("search"), "搜索", self.show_search_dialog, "Ctrl+F"),
             (get_toolbar_icon("preview"), "预览", self.toggle_preview, "Ctrl+P"),
+            ("↔️", "左右分屏", self.set_split_horizontal, ""),
+            ("↕️", "上下分屏", self.set_split_vertical, ""),
+            ("📝", "仅编辑", self.set_editor_only, ""),
+            ("👁", "仅预览", self.set_preview_only, ""),
             (get_toolbar_icon("export"), "导出", self.export_to_word, "Ctrl+Shift+S"),
             (get_toolbar_icon("pdf"), "PDF", self.export_to_pdf, ""),
             ("🌐", "HTML", self.show_html_export, ""),  # HTML 导出
@@ -669,6 +673,7 @@ class App(ctk.CTk):
             sashrelief='flat'
         )
         self.paned_window.pack(fill="both", expand=True)
+        self.paned_window.bind("<ButtonRelease-1>", self._on_split_drag_end)
         
         # ===== 左侧：输入区域 =====
         self._create_input_panel(self.paned_window)
@@ -685,7 +690,8 @@ class App(ctk.CTk):
                 if w <= 0:
                     self.after(100, _set_half_half)
                     return
-                self.paned_window.sash_place(0, w // 2, 0)
+                ratio = float(self.config.get('split_ratio', 0.5))
+                self.paned_window.sash_place(0, int(w * ratio), 0)
             except Exception:
                 pass
         self.after(150, _set_half_half)
@@ -860,42 +866,50 @@ class App(ctk.CTk):
         )
         self.toc_btn.pack(side="left", padx=(0, 8))
         
-        theme_label = ctk.CTkLabel(
+        # 主题下拉：使用预览主题管理器的显示名
+        theme_display_names = [display for _, display in preview_theme_manager.get_theme_names()]
+        self.preview_theme_option = ctk.CTkOptionMenu(
             theme_frame,
-            text="主题:",
+            values=theme_display_names,
+            command=self._on_preview_theme_change,
             font=ctk.CTkFont(size=11),
-            text_color=COLORS['text_secondary']
+            text_color=COLORS['text_secondary'],
+            fg_color="#FFFFFF",
+            button_color="#FFFFFF",
+            button_hover_color=COLORS.get('highlight', '#E5E7EB'),
         )
-        theme_label.pack(side="left", padx=(0, 4))
-        
-        # 主题下拉选择
-        theme_names = [name for name, _ in preview_theme_manager.get_theme_names()]
-        theme_display = {name: theme.display_name for name, theme in preview_theme_manager.get_all_themes().items()}
-        
-        self.preview_theme_var = ctk.StringVar(value=self.config.get('preview_theme', 'github'))
-        self.preview_theme_combo = ctk.CTkComboBox(
-            theme_frame,
-            values=[theme_display.get(n, n) for n in theme_names],
-            variable=self.preview_theme_var,
-            width=100,
-            height=24,
-            font=ctk.CTkFont(size=11),
-            command=self._on_preview_theme_change
-        )
-        self.preview_theme_combo.pack(side="left")
+        try:
+            current_display = preview_theme_manager.get_current_theme().display_name
+            if current_display in theme_display_names:
+                self.preview_theme_option.set(current_display)
+        except Exception:
+            pass
+        self.preview_theme_option.pack(side="left", padx=(0, 4))
         
         # 右侧：缩放控件
-        zoom_controls = self.preview_zoom_feature.create_controls(top_frame)
-        zoom_controls.pack(side="right")
+        self.preview_zoom_controls = self.preview_zoom_feature.create_controls(top_frame)
+        self.preview_zoom_controls.pack(side="right", padx=(0, 4))
         
-        # 预览组件（添加滚动同步回调）
+        # 预览组件
         self.preview = MarkdownPreview(
             self.preview_card, 
             on_content_change=self._on_preview_change, 
             app=self,
             on_scroll=self._on_preview_scroll
         )
-        self.preview.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        self.preview.pack(fill="both", expand=True, padx=10, pady=(6, 10))
+        
+        # 预览区域提示（只读、双击跳转、Ctrl+C）
+        hint_frame = ctk.CTkFrame(self.preview_card, fg_color="transparent")
+        hint_frame.pack(fill="x", padx=10, pady=(0, 6))
+        hint_label = ctk.CTkLabel(
+            hint_frame,
+            text="👁️ 预览区为只读，支持 Ctrl+C 复制，双击任意段落可跳转到源码；滚动同步可在编辑器/预览滚动时自动保持一致。",
+            anchor="w",
+            text_color=COLORS.get('text_secondary', '#6b7280'),
+            font=ctk.CTkFont(size=11)
+        )
+        hint_label.pack(side="left", fill="x")
         
         # 设置预览区双击跳转回调
         self.preview.set_jump_callback(self._jump_to_line)
@@ -993,6 +1007,28 @@ class App(ctk.CTk):
             width=80
         )
         self.refresh_preview_btn.pack(side="right", padx=(0, 6))
+    
+    def _on_split_drag_end(self, event=None):
+        """拖拽分隔条后保存比例，保持下次启动一致。"""
+        try:
+            if not hasattr(self, 'paned_window') or len(self.paned_window.panes()) < 2:
+                return
+            orient = self.paned_window.cget("orient")
+            total_w = max(1, self.paned_window.winfo_width())
+            total_h = max(1, self.paned_window.winfo_height())
+            try:
+                sash_x, sash_y = self.paned_window.sash_coord(0)
+            except Exception:
+                sash_x, sash_y = 0, 0
+            if str(orient) == str(tk.VERTICAL):
+                ratio = sash_y / float(total_h)
+            else:
+                ratio = sash_x / float(total_w)
+            ratio = min(0.85, max(0.15, ratio))
+            self.config['split_ratio'] = ratio
+            save_config(self.config)
+        except Exception:
+            pass
     
     def _create_status_bar(self):
         """创建状态栏"""

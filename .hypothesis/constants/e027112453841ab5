@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\batch_convert.py
-# hypothesis_version: 6.148.8
-
-[100, 120, 200, 300, 760, '#059669', '#10B981', '#4B5563', '#6B7280', '#DC2626', '#EF4444', '*.*', '*.md *.markdown', '.docx', '.markdown', '.md', '1.0', '800x600', 'Markdown文件', 'a4', 'bold', 'both', 'disabled', 'end', 'export_style', 'left', 'merged_output.docx', 'normal', 'page_size', 'standard', 'transparent', 'x', '⛔ 取消', '➕ 添加文件', '关闭', '准备就绪', '合并为单个Word文档', '完成', '已取消', '所有文件', '批量 Markdown 转 Word', '提示', '正在合并文档...', '请先添加要转换的文件！', '选择Markdown文件', '选择文件夹', '选择输出目录', '错误', '📁 批量转换', '📁 添加文件夹', '🗑️ 清空', '🚀 开始批量转换']

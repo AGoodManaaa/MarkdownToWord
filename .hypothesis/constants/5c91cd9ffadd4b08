@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\theme_editor.py
-# hypothesis_version: 6.148.8
-
-[100, 200, '#FFFFFF', '800x600', 'My Custom Theme', 'apply_custom_theme', 'bg_color', 'colors', 'current_theme', 'ew', 'fg_color', 'gray', 'input_bg', 'left', 'name', 'nsew', 'preview_bg', 'primary', 'right', 'text', 'text_color', 'w', 'x', '主色调', '主题名称:', '主题已保存（需重启生效或实现实时刷新）', '保存主题', '前景色 (文本)', '取消', '提示', '文本颜色', '界面预览 (Coming Soon)', '编辑区背景', '背景色', '自定义主题编辑器', '预览区背景', '颜色配置']

@@ -1,4 +1,0 @@
-# file: D:\Code\转换\ui\features\link_checker.py
-# hypothesis_version: 6.148.8
-
-[120, 200, 500, 650, '#', '...', '0', '1.0', '650x500', '<(https?://[^>]+)>', 'User-Agent', 'WM_DELETE_WINDOW', '_textbox', 'anchor', 'bold', 'both', 'broken', 'current_file', 'darkred', 'disabled', 'e', 'end-1c', 'error', 'file:', 'gray', 'gray20', 'gray50', 'gray70', 'gray90', 'green', 'http://', 'https://', 'image', 'input_text', 'javascript:', 'left', 'lightcoral', 'lightgreen', 'mailto:', 'none', 'normal', 'ok', 'orange', 'pending', 'red', 'right', 'tel:', 'timeout', 'total', 'transparent', 'url', 'x', '⏱', '⏳ 待检查', '⏹ 停止', '○', '⚓', '⚠', '✓', '✓ 有效', '✔️ 检查链接', '✗', '✗ 失效', '已停止', '总链接', '文件不存在', '文档为空', '未找到链接', '检查完成，所有链接有效 ✓', '请求超时', '🔍 扫描链接', '🔗', '🔗 链接检查器', '🖼']
