@@ -53,6 +53,7 @@ from ui.features import (
     BibliographyFeature,
     VersionControlFeature,
     HTMLExportFeature,  # HTML 导出
+    DiagramFeature,     # 图表支持
     # Phase 4 新增功能
     AIAssistantFeature,
     AutocompleteFeature,
@@ -187,6 +188,7 @@ class App(ctk.CTk):
         self.bibliography_feature = BibliographyFeature(self)
         self.version_control = VersionControlFeature(self)
         self.html_export_feature = HTMLExportFeature(self)  # HTML 导出
+        self.diagram_feature = DiagramFeature(self)         # 图表渲染支持
         
         # Phase 4 新增功能
         self.ai_assistant = AIAssistantFeature(self)
@@ -302,6 +304,7 @@ class App(ctk.CTk):
             
             # 2. 智能编辑（缩进、括号匹配）
             self.smart_editor = SmartEditor(text_widget)
+            self.input_editor.smart_editor_ref = self.smart_editor # 建立双向引用用于更新
             print("✅ 智能编辑已启用")
             
             # 3. 迷你地图（嵌入到编辑区内部右侧，VS Code 风格）
@@ -675,8 +678,17 @@ class App(ctk.CTk):
         self._create_preview_panel(self.paned_window)
         self.paned_window.add(self.preview_card, stretch="always")
         
-        # 初始权重设置
-        self.after(100, lambda: self.paned_window.sash_place(0, 600, 0))
+        # 初始权重设置：左右 50/50（基于 paned_window 实际宽度）
+        def _set_half_half():
+            try:
+                w = self.paned_window.winfo_width()
+                if w <= 0:
+                    self.after(100, _set_half_half)
+                    return
+                self.paned_window.sash_place(0, w // 2, 0)
+            except Exception:
+                pass
+        self.after(150, _set_half_half)
         
         # 插入示例文本（在所有组件创建完成后）
         self._insert_example()
@@ -815,6 +827,38 @@ class App(ctk.CTk):
             command=self.toggle_page_view
         )
         self.page_view_btn.pack(side="left", padx=(0, 8))
+        
+        self.typewriter_btn = ctk.CTkButton(
+            theme_frame,
+            text="⌨️ 打字机",
+            width=80,
+            height=24,
+            corner_radius=6,
+            fg_color=COLORS['bg_card'],
+            text_color=COLORS['text_primary'],
+            hover_color=COLORS['highlight'],
+            border_width=1,
+            border_color=COLORS['border'],
+            font=ctk.CTkFont(size=10, weight="bold"),
+            command=self.toggle_typewriter_mode
+        )
+        self.typewriter_btn.pack(side="left", padx=(0, 8))
+        
+        self.toc_btn = ctk.CTkButton(
+            theme_frame,
+            text="📋 大纲",
+            width=80,
+            height=24,
+            corner_radius=6,
+            fg_color=COLORS['bg_card'],
+            text_color=COLORS['text_primary'],
+            hover_color=COLORS['highlight'],
+            border_width=1,
+            border_color=COLORS['border'],
+            font=ctk.CTkFont(size=10, weight="bold"),
+            command=self.toggle_preview_toc
+        )
+        self.toc_btn.pack(side="left", padx=(0, 8))
         
         theme_label = ctk.CTkLabel(
             theme_frame,
@@ -1230,6 +1274,34 @@ class App(ctk.CTk):
                 self.page_view_btn.configure(fg_color=COLORS['bg_card'], text_color=COLORS['text_primary'])
                 self.update_status("📄 已恢复流式预览模式")
     
+    def toggle_typewriter_mode(self):
+        """切换打字机模式"""
+        if hasattr(self, 'input_editor'):
+            enabled = not getattr(self.input_editor, '_typewriter_mode', False)
+            self.input_editor.set_typewriter_mode(enabled)
+            
+            # 更新按钮样式
+            if enabled:
+                self.typewriter_btn.configure(fg_color=COLORS['primary'], text_color="white")
+                self.update_status("⌨️ 已开启打字机模式 (光标居中)")
+            else:
+                self.typewriter_btn.configure(fg_color=COLORS['bg_card'], text_color=COLORS['text_primary'])
+                self.update_status("⌨️ 已恢复普通编辑模式")
+
+    def toggle_preview_toc(self):
+        """切换预览区浮动大纲"""
+        if hasattr(self, 'preview'):
+            self.preview.toggle_floating_toc()
+            enabled = getattr(self.preview, '_toc_visible', False)
+            
+            # 更新按钮样式
+            if enabled:
+                self.toc_btn.configure(fg_color=COLORS['primary'], text_color="white")
+                self.update_status("📋 已开启浮动大纲")
+            else:
+                self.toc_btn.configure(fg_color=COLORS['bg_card'], text_color=COLORS['text_primary'])
+                self.update_status("📋 已关闭浮动大纲")
+    
     def refresh_preview(self):
         """手动刷新预览内容"""
         try:
@@ -1459,8 +1531,19 @@ class App(ctk.CTk):
             self.print_preview.show()
     
     def show_search_dialog(self):
-        """显示搜索替换对话框"""
-        # 优先使用新的全局搜索替换功能
+        """显示搜索替换对话框 - 优先使用内联搜索悬浮层"""
+        if hasattr(self, 'input_editor'):
+            # 获取选中文本作为初始搜索词
+            try:
+                textbox = self.input_editor._textbox
+                initial_text = textbox.get(tk.SEL_FIRST, tk.SEL_LAST)
+            except:
+                initial_text = ""
+            self.input_editor.show_search_overlay(initial_text)
+            self.update_status("🔍 已打开内联搜索 - 输入关键词实时高亮")
+            return
+
+        # 降级使用旧的全局搜索替换功能
         if hasattr(self, 'global_search_replace') and self.global_search_replace:
             self.global_search_replace.show_dialog()
         elif self.search_dialog is None or not self.search_dialog.winfo_exists():

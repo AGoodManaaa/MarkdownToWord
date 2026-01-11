@@ -250,6 +250,14 @@ class GlobalSearchReplaceFeature:
                     text_color=("red", "lightcoral")
                 )
             
+            # 更新编辑器热力图
+            if hasattr(self.app, 'input_editor'):
+                self.app.input_editor.update_search_heatmap(self.matches)
+            
+            # 更新预览区搜索高亮
+            if hasattr(self.app, 'preview'):
+                self.app.preview.highlight_search_term(pattern, self.case_sensitive_var.get())
+            
             self._update_preview()
             
         except re.error as e:
@@ -461,5 +469,11 @@ class GlobalSearchReplaceFeature:
     def _on_close(self):
         """关闭对话框时清除高亮"""
         self._clear_highlights()
+        # 清除热力图
+        if hasattr(self.app, 'input_editor'):
+            self.app.input_editor.update_search_heatmap([])
+        # 清除预览区搜索高亮
+        if hasattr(self.app, 'preview'):
+            self.app.preview.highlight_search_term("")
         self.dialog.destroy()
         self.dialog = None

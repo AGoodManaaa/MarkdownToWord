@@ -25,13 +25,13 @@ class FoldRegion:
 class CodeFolding:
     """代码折叠功能"""
     
-    def __init__(self, text_widget, line_numbers_canvas=None):
+    def __init__(self, text_widget, line_numbers_widget=None):
         """
         初始化代码折叠
         
         Args:
             text_widget: tkinter Text 或 CTkTextbox 组件
-            line_numbers_canvas: 行号画布（用于显示折叠图标）
+            line_numbers_widget: 行号组件 (Text 或 Canvas)
         """
         self.text_widget = text_widget
         self._enabled = True
@@ -44,8 +44,8 @@ class CodeFolding:
         else:
             self._text = text_widget
         
-        # 行号画布（用于显示折叠图标）
-        self.line_canvas = line_numbers_canvas
+        # 行号组件
+        self.line_widget = line_numbers_widget
         
         # 折叠图标
         self._fold_icon = "▼"
@@ -134,37 +134,32 @@ class CodeFolding:
     
     def _update_fold_markers(self):
         """更新折叠标记显示"""
-        if not self.line_canvas:
+        if not self.line_widget:
             return
         
-        # 清除旧的折叠图标
-        self.line_canvas.delete("fold_icon")
+        # 情况1: 如果行号栏是 Canvas
+        if isinstance(self.line_widget, tk.Canvas):
+            self.line_widget.delete("fold_icon")
+            for start_line, region in self._fold_regions.items():
+                try:
+                    bbox = self._text.bbox(f"{start_line}.0")
+                    if bbox:
+                        y = bbox[1] + bbox[3] // 2
+                        icon = self._unfold_icon if region.is_folded else self._fold_icon
+                        self.line_widget.create_text(
+                            10, y, text=icon, anchor='w', fill='#6b7280',
+                            font=('Consolas', 8), tags=("fold_icon", f"fold_{start_line}")
+                        )
+                        self.line_widget.tag_bind(f"fold_{start_line}", '<Button-1>', 
+                                                lambda e, sl=start_line: self.toggle_fold(sl))
+                except: pass
         
-        # 绘制折叠图标
-        for start_line, region in self._fold_regions.items():
-            try:
-                bbox = self._text.bbox(f"{start_line}.0")
-                if bbox:
-                    y = bbox[1] + bbox[3] // 2
-                    icon = self._unfold_icon if region.is_folded else self._fold_icon
-                    
-                    item = self.line_canvas.create_text(
-                        10, y,
-                        text=icon,
-                        anchor='w',
-                        fill='#6b7280',
-                        font=('Consolas', 8),
-                        tags=("fold_icon", f"fold_{start_line}")
-                    )
-                    
-                    # 绑定点击事件
-                    self.line_canvas.tag_bind(
-                        f"fold_{start_line}",
-                        '<Button-1>',
-                        lambda e, sl=start_line: self.toggle_fold(sl)
-                    )
-            except Exception:
-                pass
+        # 情况2: 如果行号栏是 Text (LineNumberedText 风格)
+        elif isinstance(self.line_widget, tk.Text):
+            # Text 风格下，图标通常显示在行号旁边
+            # 这种风格由于 LineNumberedText 会全量刷新行号，折叠图标会被覆盖
+            # 建议在 LineNumberedText 的 _update_line_numbers 中集成此逻辑
+            pass
     
     def toggle_fold(self, start_line: int):
         """切换折叠状态"""

@@ -43,6 +43,8 @@ class BlockElement:
     content: Any  # 内容，可以是字符串、列表或其他结构
     level: int = 0  # 用于标题级别
     language: str = ""  # 用于代码块
+    line_start: int = 0  # 源码起始行号
+    line_end: int = 0    # 源码结束行号
 
 
 def parse_inline(text: str) -> List[InlineElement]:
@@ -201,6 +203,7 @@ def parse_markdown(text: str) -> List[BlockElement]:
     
     while i < len(lines):
         line = lines[i]
+        start_idx = i + 1
         
         # 空行
         if not line.strip():
@@ -216,7 +219,7 @@ def parse_markdown(text: str) -> List[BlockElement]:
                 code_lines.append(lines[i])
                 i += 1
             i += 1  # 跳过结束的 ```
-            blocks.append(BlockElement('code_block', '\n'.join(code_lines), language=lang))
+            blocks.append(BlockElement('code_block', '\n'.join(code_lines), language=lang, line_start=start_idx, line_end=i))
             continue
         
         # 块级公式 $$
@@ -225,7 +228,7 @@ def parse_markdown(text: str) -> List[BlockElement]:
             single_match = re.match(r'^\$\$(.+?)\$\$', line.strip())
             if single_match:
                 formula = single_match.group(1).strip()
-                blocks.append(BlockElement('math_block', formula))
+                blocks.append(BlockElement('math_block', formula, line_start=start_idx, line_end=start_idx))
                 # 检查剩余部分是否还有公式
                 remaining = line.strip()[single_match.end():].strip()
                 if remaining.startswith('$$'):
@@ -245,14 +248,14 @@ def parse_markdown(text: str) -> List[BlockElement]:
                 if last != '$$':
                     formula_lines.append(last[:-2])
             i += 1
-            blocks.append(BlockElement('math_block', '\n'.join(formula_lines)))
+            blocks.append(BlockElement('math_block', '\n'.join(formula_lines), line_start=start_idx, line_end=i))
             continue
         
         # 标题 #
         if line.startswith('#'):
             level = len(re.match(r'^#+', line).group())
             content = line[level:].strip()
-            blocks.append(BlockElement('heading', content, level=min(level, 4)))
+            blocks.append(BlockElement('heading', content, level=min(level, 4), line_start=start_idx, line_end=start_idx))
             i += 1
             continue
         
@@ -262,7 +265,7 @@ def parse_markdown(text: str) -> List[BlockElement]:
             while i < len(lines) and '|' in lines[i]:
                 table_lines.append(lines[i])
                 i += 1
-            blocks.append(BlockElement('table', '\n'.join(table_lines)))
+            blocks.append(BlockElement('table', '\n'.join(table_lines), line_start=start_idx, line_end=i))
             continue
         
         # 引用 >
@@ -271,50 +274,52 @@ def parse_markdown(text: str) -> List[BlockElement]:
             while i < len(lines) and lines[i].startswith('>'):
                 quote_lines.append(lines[i][1:].strip())
                 i += 1
-            blocks.append(BlockElement('quote', '\n'.join(quote_lines)))
+            blocks.append(BlockElement('quote', '\n'.join(quote_lines), line_start=start_idx, line_end=i))
             continue
         
         # 无序列表（包括任务列表）
         if re.match(r'^[\s]*[\*\-\+]\s', line):
             items = []
             while i < len(lines) and re.match(r'^[\s]*[\*\-\+]\s', lines[i]):
+                current_line_idx = i + 1
                 item_text = re.sub(r'^[\s]*[\*\-\+]\s*', '', lines[i])
                 # 检查是否是任务列表
                 task_match = re.match(r'^\[([ xX])\]\s*(.*)', item_text)
                 if task_match:
                     checked = task_match.group(1).lower() == 'x'
                     text = task_match.group(2)
-                    items.append({'type': 'task', 'checked': checked, 'text': text})
+                    items.append({'type': 'task', 'checked': checked, 'text': text, 'line': current_line_idx})
                 else:
-                    items.append({'type': 'item', 'text': item_text})
+                    items.append({'type': 'item', 'text': item_text, 'line': current_line_idx})
                 i += 1
-            blocks.append(BlockElement('list', items, level=0))
+            blocks.append(BlockElement('list', items, level=0, line_start=start_idx, line_end=i))
             continue
         
         # 有序列表（支持缩进级别）
         if re.match(r'^[\s]*\d+\.\s', line):
             items = []
             while i < len(lines) and re.match(r'^[\s]*\d+\.\s', lines[i]):
+                current_line_idx = i + 1
                 match = re.match(r'^(\s*)(\d+)\.\s+(.*)$', lines[i])
                 if match:
                     indent = len(match.group(1))
                     level = indent // 2  # 每2个空格为一级
                     text = match.group(3)
-                    items.append({'level': level, 'text': text})
+                    items.append({'level': level, 'text': text, 'line': current_line_idx})
                 i += 1
-            blocks.append(BlockElement('list', items, level=1))  # level=1表示有序列表
+            blocks.append(BlockElement('list', items, level=1, line_start=start_idx, line_end=i))  # level=1表示有序列表
             continue
         
         # 水平线
         if re.match(r'^[\s]*[-\*_]{3,}[\s]*$', line):
-            blocks.append(BlockElement('hr', ''))
+            blocks.append(BlockElement('hr', '', line_start=start_idx, line_end=start_idx))
             i += 1
             continue
         
         # 图片（单独一行）
         img_match = re.match(r'^!\[([^\]]*)\]\(([^\)]+)\)$', line.strip())
         if img_match:
-            blocks.append(BlockElement('image', img_match.group(1), language=img_match.group(2)))
+            blocks.append(BlockElement('image', img_match.group(1), language=img_match.group(2), line_start=start_idx, line_end=start_idx))
             i += 1
             continue
 
@@ -323,7 +328,7 @@ def parse_markdown(text: str) -> List[BlockElement]:
         if footnote_match:
             ref = footnote_match.group(1)
             content = footnote_match.group(2)
-            blocks.append(BlockElement('footnote_def', content, language=ref))
+            blocks.append(BlockElement('footnote_def', content, language=ref, line_start=start_idx, line_end=start_idx))
             i += 1
             continue
         
@@ -343,7 +348,7 @@ def parse_markdown(text: str) -> List[BlockElement]:
             i += 1
         
         if para_lines:
-            blocks.append(BlockElement('paragraph', ' '.join(para_lines)))
+            blocks.append(BlockElement('paragraph', ' '.join(para_lines), line_start=start_idx, line_end=i))
     
     return blocks
 

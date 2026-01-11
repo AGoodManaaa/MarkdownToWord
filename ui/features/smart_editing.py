@@ -158,17 +158,30 @@ class SmartIndent:
             # 空列表项，结束列表
             line_num = int(self._text.index('insert').split('.')[0])
             self._text.delete(f"{line_num}.0", f"{line_num}.end")
+            
+            # 如果缩进大于一个单位，则减少缩进，否则清除行
             indent_unit = self._get_indent_unit()
-            new_indent = indent[:-len(indent_unit)] if indent and len(indent) >= len(indent_unit) else ''
-            self._text.insert(f"{line_num}.0", new_indent)
+            if len(indent) >= len(indent_unit):
+                new_indent = indent[:-len(indent_unit)]
+                self._text.insert(f"{line_num}.0", new_indent)
+            else:
+                # 已是顶层，保留空行
+                pass
             return 'break'
         
         # 生成新的列表标记
         if pattern_name == 'ordered':
-            new_marker = str(int(marker) + 1) + '.'
+            # 自动增加序号
+            try:
+                num = int(marker.rstrip('.'))
+                new_marker = f"{num + 1}."
+            except:
+                new_marker = marker
         elif pattern_name == 'task':
-            new_marker = marker + ' [ ]'
+            # 任务列表：继承标记并保持未勾选状态 [ ]
+            new_marker = f"{marker} [ ]"
         else:
+            # 无序列表
             new_marker = marker
         
         # 插入新列表项
@@ -705,6 +718,48 @@ class CommentToggle:
         self._enabled = False
 
 
+class BracketColorizer:
+    """括号对染色功能 (Rainbow Brackets)"""
+    def __init__(self, text_widget):
+        self._text = text_widget
+        self._colors = ["#FFD700", "#DA70D6", "#1E90FF"] # 金色, 兰花紫, 闪兰
+        self._setup_tags()
+
+    def _setup_tags(self):
+        for i, color in enumerate(self._colors):
+            self._text.tag_configure(f"bracket_lvl_{i}", foreground=color, font=('Consolas', 10, 'bold'))
+
+    def update(self):
+        """扫描并为所有括号对染色"""
+        for i in range(len(self._colors)):
+            self._text.tag_remove(f"bracket_lvl_{i}", "1.0", "end")
+            
+        content = self._text.get("1.0", "end-1c")
+        stack = []
+        pairs = {'(': ')', '[': ']', '{': '}'}
+        
+        for idx, char in enumerate(content):
+            if char in pairs.keys():
+                pos = self._index_to_pos(idx, content)
+                stack.append((char, pos))
+            elif char in pairs.values():
+                if stack:
+                    opening_char, opening_pos = stack.pop()
+                    # 检查是否匹配
+                    if pairs[opening_char] == char:
+                        level = len(stack) % len(self._colors)
+                        closing_pos = self._index_to_pos(idx, content)
+                        self._text.tag_add(f"bracket_lvl_{level}", opening_pos, f"{opening_pos}+1c")
+                        self._text.tag_add(f"bracket_lvl_{level}", closing_pos, f"{closing_pos}+1c")
+
+    def _index_to_pos(self, index, content):
+        """将字符偏移转换为 Tkinter 坐标"""
+        # 这是一个耗时操作，对于大文档需要优化，这里先提供基础实现
+        lines = content[:index].split('\n')
+        line = len(lines)
+        col = len(lines[-1])
+        return f"{line}.{col}"
+
 class SmartEditor:
     """智能编辑器 - 整合所有智能编辑功能"""
     
@@ -721,6 +776,7 @@ class SmartEditor:
         self.smart_indent = SmartIndent(text_widget)
         self.bracket_matcher = BracketMatcher(text_widget)
         self.comment_toggle = CommentToggle(text_widget)
+        self.bracket_colorizer = BracketColorizer(getattr(text_widget, '_textbox', text_widget))
     
     def enable_all(self):
         """启用所有功能"""

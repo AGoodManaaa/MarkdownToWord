@@ -5,6 +5,7 @@ import tkinter as tk
 import customtkinter as ctk
 from PIL import Image, ImageTk
 import matplotlib.pyplot as plt
+import re
 
 from parser import parse_markdown, parse_inline, parse_table, InlineType
 from utils import normalize_markdown, convert_latex_delimiters
@@ -15,7 +16,9 @@ class MarkdownPreview(ctk.CTkFrame):
     """可编辑的Markdown预览组件 - 支持双向同步和滚动同步"""
     def __init__(self, master, on_content_change=None, app=None, on_scroll=None, **kwargs):
         super().__init__(master, fg_color=COLORS['bg_card'], corner_radius=12, **kwargs)
-
+        self._base_width = 900
+        self._resize_timer = None
+        self._pending_scroll_ratio = None
         # 预览缩放（仅影响预览区字体/样式）
         self._scale = 1.0
         # 放大基础字号，改善可读性
@@ -50,6 +53,9 @@ class MarkdownPreview(ctk.CTkFrame):
         
         # 存储段落信息：{line_start: {'type': 'paragraph', 'md_line': 1, 'format': []}}
         self.paragraph_map = {}
+        
+        # 脚注存储
+        self._footnotes = {} # ref -> content
 
         # 公式 token：用于把“图片公式”安全回写为 Markdown（不改渲染逻辑）
         self._math_token_counter = 0
@@ -122,9 +128,100 @@ class MarkdownPreview(ctk.CTkFrame):
         # 跳转回调
         self.on_jump_to_line = None
         
+        # 浮动大纲 (ToC)
+        self._toc_visible = False
+        self._toc_frame = None
+        self._toc_listbox = None
+        self._headings = [] # [(level, title, source_line)]
+        
+        # 平滑滚动相关
+        self._smooth_scroll_timer = None
+        
+        # 阅读进度条
+        self._progress_bar = None
+        self._init_reading_progress_bar()
+        
         # 右键菜单
         self._create_context_menu()
+        
+        # 监听尺寸变化，驱动平滑缩放
+        self.bind("<Configure>", self._on_resize)
     
+    def _init_reading_progress_bar(self):
+        """初始化预览区顶部的阅读进度条"""
+        self._progress_canvas = tk.Canvas(
+            self,
+            height=3,
+            bg=self._get_bg_color(),
+            highlightthickness=0,
+            bd=0
+        )
+        self._progress_canvas.place(relx=0, rely=0, relwidth=1, y=0)
+        
+        # 进度条线条
+        self._progress_line = self._progress_canvas.create_line(
+            0, 1, 0, 1, 
+            fill=COLORS.get('primary', '#3b82f6'), 
+            width=3
+        )
+
+    def _update_reading_progress(self, position: float):
+        """更新进度条长度"""
+        if not hasattr(self, '_progress_canvas'): return
+        
+        # position 是 0.0 - 1.0 的滚动比例
+        # 计算可见范围
+        yview = self.text.yview()
+        # 实际进度应该是 可见区域底部所占的比例
+        # 如果到底了就是 100%
+        progress = yview[1]
+        
+        canvas_width = self._progress_canvas.winfo_width()
+        if canvas_width <= 1: 
+            canvas_width = self.winfo_width()
+            
+        self._progress_canvas.coords(self._progress_line, 0, 1, int(progress * canvas_width), 1)
+    
+    def _get_bg_color(self):
+        """兼容 CTkFrame，获取背景色"""
+        try:
+            bg = self.cget("fg_color")
+            if isinstance(bg, (list, tuple)):
+                return bg[0]
+            return bg
+        except Exception:
+            return "#FFFFFF"
+    
+    def _on_resize(self, event):
+        """窗口尺寸变化时，动态调整缩放比例并平滑重渲染"""
+        try:
+            new_scale = max(0.8, min(1.6, event.width / float(self._base_width)))
+            if abs(new_scale - self._scale) < 0.03:
+                return
+            self._scale = new_scale
+            # 防抖重渲染
+            if self._resize_timer:
+                self.after_cancel(self._resize_timer)
+            self._resize_timer = self.after(120, self._rerender_after_resize)
+        except Exception:
+            pass
+    
+    def _rerender_after_resize(self):
+        """根据当前缩放重新渲染，确保文字与表格等比例放大"""
+        self._resize_timer = None
+        try:
+            if self.app and hasattr(self.app, 'input_text'):
+                md = self.app.input_text.get("1.0", "end-1c")
+                self.update_preview(md)
+        except Exception:
+            pass
+
+    def _on_text_scroll(self, first, last):
+        """滚动事件处理"""
+        self._update_reading_progress(float(last))
+        if self.on_scroll:
+            self.on_scroll(first, last)
+
     def _create_context_menu(self):
         """创建右键菜单"""
         self.context_menu = tk.Menu(self, tearoff=0)
@@ -578,9 +675,10 @@ class MarkdownPreview(ctk.CTkFrame):
             self.configure(fg_color=COLORS.get('bg_sidebar', '#f3f4f6'))
             
             # 重新布局：使用 place 或 grid 居中
-            self.text.pack(side="top", pady=20, padx=40, expand=False)
-            self.text.configure(width=85, borderwidth=1, relief="solid") # 约 800px
-            self.scrollbar.pack(side="right", fill="y", padx=(0, 10), pady=10)
+            self.text.pack(side="left", fill="both", expand=True, padx=30, pady=20)
+            # 去掉固定宽度，采用边框模拟纸张
+            self.text.configure(width=0, borderwidth=1, relief="solid")
+            self.scrollbar.pack(side="right", fill="y", padx=(0, 10), pady=20)
         else:
             # 流式布局样式
             self.text.pack_forget()
@@ -801,6 +899,9 @@ class MarkdownPreview(ctk.CTkFrame):
         if getattr(self, '_is_rendering', False):
             return
             
+        # 启动渲染时显示动画反馈
+        self._start_render_animation()
+            
         def _render_task():
             self._is_rendering = True
             try:
@@ -814,8 +915,30 @@ class MarkdownPreview(ctk.CTkFrame):
             except Exception as e:
                 print(f"Render error: {e}")
                 self._is_rendering = False
+                self.after(0, lambda: self._set_preview_error())
         
         threading.Thread(target=_render_task, daemon=True).start()
+
+    def _start_render_animation(self):
+        """在进度条位置显示渲染中的呼吸动画"""
+        if not hasattr(self, '_progress_canvas'): return
+        self._progress_canvas.configure(bg=COLORS.get('highlight', '#f0f9ff'))
+        self._step_render_animation(0)
+
+    def _step_render_animation(self, step):
+        """渲染动画单步"""
+        if not getattr(self, '_is_rendering', False):
+            self._progress_canvas.configure(bg=self._get_bg_color())
+            # 渲染结束，恢复正常的进度条显示
+            self._update_reading_progress(0) 
+            return
+            
+        # 简单的颜色交替
+        colors = ["#3b82f6", "#60a5fa", "#93c5fd", "#60a5fa"]
+        color = colors[step % len(colors)]
+        self._progress_canvas.itemconfig(self._progress_line, fill=color)
+        
+        self.after(200, lambda: self._step_render_animation(step + 1))
 
     def _apply_render_result(self, blocks):
         """主线程应用渲染结果"""
@@ -824,25 +947,63 @@ class MarkdownPreview(ctk.CTkFrame):
             self.text.configure(state='normal')
             self.text.delete('1.0', 'end')
             
-            # 清除旧的公式图片，重置计数器
+            # 清除旧数据
             self.math_images = []
             self.equation_counter = 0
             self._math_token_counter = 0
             self._math_token_map = {}
+            self._headings = []
+            self._footnotes = {} # 重置脚注
+            self._anchor_map = {} # heading_id -> text_index
             
+            # 记录当前滚动比例，缩放/重渲染后恢复
+            try:
+                self._pending_scroll_ratio = self.text.yview()[0]
+            except Exception:
+                self._pending_scroll_ratio = None
+
+            # 1. 第一遍扫描，提取脚注定义和标题
             for block in blocks:
-                self._render_block(block)
+                if block.type == 'heading':
+                    # 生成简单的 ID (去掉空格，转小写)
+                    anchor_id = re.sub(r'[^\w-]', '', block.content.lower().replace(' ', '-'))
+                    self._headings.append((block.level, block.content, block.line_start, anchor_id))
+                elif block.type == 'footnote_def':
+                    self._footnotes[block.language] = block.content
+
+            # 2. 第二遍扫描，正式渲染
+            for block in blocks:
+                if block.type != 'footnote_def': # 脚注定义通常不直接显示在正文位置
+                    self._render_block(block)
+
+            # 3. 在文末追加脚注（如果有）
+            if self._footnotes:
+                self.text.insert('end', '\n' + '─' * 20 + '\n', ('body',))
+                for ref, content in self._footnotes.items():
+                    self.text.insert('end', f'[^{ref}]: ', ('supsub',))
+                    self._insert_inline_elements(content, extra_tags=['body'])
+                    self.text.insert('end', '\n')
 
             if bool(getattr(self, '_readonly', False)):
                 self.text.configure(state='disabled')
+            
+            # 恢复滚动位置
+            try:
+                if self._pending_scroll_ratio is not None:
+                    self.text.yview_moveto(self._pending_scroll_ratio)
+            except Exception:
+                pass
+            finally:
+                self._pending_scroll_ratio = None
+
+            # 更新浮动大纲
+            if self._toc_visible:
+                self._update_floating_toc_content()
         except Exception as e:
             print(f"Apply render error: {e}")
+            self._set_preview_error()
         finally:
             self._is_rendering = False
-            # 渲染完成后触发一次滚动同步
-            if hasattr(self, 'on_scroll') and self.on_scroll:
-                # 触发一个微小的滚动变化来强制刷新同步位
-                pass
 
     def _render_block(self, block):
         """渲染块级元素"""
@@ -875,8 +1036,14 @@ class MarkdownPreview(ctk.CTkFrame):
             self.text.insert('end', '\n' + '─' * 50 + '\n\n')
     
     def _insert_heading(self, text: str, level: int):
-        """插入标题 - 使用共用解析器处理行内元素"""
+        """插入标题 - 使用共用解析器处理行内元素，并记录锚点位置"""
         tag = f'h{min(level, 4)}'
+        anchor_id = re.sub(r'[^\w-]', '', text.lower().replace(' ', '-'))
+        
+        # 记录锚点位置
+        start_idx = self.text.index('end-1c')
+        self._anchor_map[anchor_id] = start_idx
+        
         self._insert_inline_elements(text, extra_tags=[tag])
         self.text.insert('end', '\n\n')
     
@@ -925,7 +1092,14 @@ class MarkdownPreview(ctk.CTkFrame):
                     self.text.insert('end', formula_text, tuple(tags + ['math']))
             
             elif elem.type == InlineType.LINK:
-                self.text.insert('end', elem.content, tuple(tags + ['link']))
+                # 检查是否是内部锚点链接
+                if elem.url.startswith('#'):
+                    anchor_id = elem.url[1:]
+                    tag_name = f"anchor_link_{anchor_id}"
+                    self.text.insert('end', elem.content, tuple(tags + ['link', tag_name]))
+                    self.text.tag_bind(tag_name, '<Button-1>', lambda e, aid=anchor_id: self._jump_to_anchor(aid))
+                else:
+                    self.text.insert('end', elem.content, tuple(tags + ['link']))
             
             elif elem.type == InlineType.IMAGE:
                 self.text.insert('end', f'🖼️[{elem.content}]', tuple(tags))
@@ -938,12 +1112,83 @@ class MarkdownPreview(ctk.CTkFrame):
             
             elif elem.type == InlineType.SUBSCRIPT:
                 self.text.insert('end', elem.content, tuple(tags + ['subscript']))
+            
+            elif elem.type == InlineType.FOOTNOTE_REF:
+                # 脚注引用 [^1]
+                ref = elem.content
+                tag_name = f"fn_ref_{ref}"
+                self.text.insert('end', f'[^{ref}]', tuple(tags + ['superscript', 'link', tag_name]))
+                # 绑定悬浮预览
+                self.text.tag_bind(tag_name, '<Enter>', lambda e, r=ref: self._show_footnote_tooltip(e, r))
+                self.text.tag_bind(tag_name, '<Leave>', lambda e: self._hide_footnote_tooltip())
     
     def _insert_code_block(self, code: str, language: str = ''):
-        """插入代码块"""
+        """插入代码块 - 支持 Mermaid/PlantUML 渲染"""
+        lang = (language or '').lower().strip()
+        
+        # 1. 检查是否是图表语言
+        if lang in ['mermaid', 'plantuml']:
+            # 尝试实时渲染图表
+            img = self._render_diagram_to_img(code, lang)
+            if img:
+                self.text.insert('end', f'[{lang} 图表]\n', ('code',))
+                self.math_images.append(img)
+                self.text.image_create('end', image=img)
+                self.text.insert('end', '\n\n')
+                return
+
+        # 2. 普通代码块渲染
         if language:
             self.text.insert('end', f'[{language}]\n', ('code',))
+        
+        # 记录起始位置用于添加复制按钮
+        code_start = self.text.index('end-1c')
         self.text.insert('end', code + '\n\n', ('code_block',))
+        code_end = self.text.index('end-1c')
+        
+        # 为代码块添加简单的“复制”按钮图标
+        try:
+            copy_btn = tk.Label(self.text, text="📋", font=('Segoe UI Emoji', 10), cursor='hand2', bg='#FAFAFA', fg='#6B7280')
+            copy_btn.bind('<Button-1>', lambda e, c=code: self._copy_to_clipboard(c))
+            self.text.window_create(code_start, window=copy_btn)
+        except Exception:
+            pass
+
+    def _render_diagram_to_img(self, code: str, lang: str):
+        """调用 DiagramFeature 渲染图表"""
+        try:
+            if not self.app or not hasattr(self.app, 'diagram_feature'):
+                return None
+            
+            # 使用临时文件存储渲染结果
+            output_path = os.path.join(tempfile.gettempdir(), f"diag_{hash(code)}.png")
+            
+            success = False
+            if lang == 'mermaid':
+                success = self.app.diagram_feature.mermaid_renderer.render(code, output_path)
+            elif lang == 'plantuml':
+                success = self.app.diagram_feature.plantuml_renderer.render(code, output_path)
+                
+            if success and os.path.exists(output_path):
+                img = Image.open(output_path)
+                # 限制最大宽度
+                max_w = self.text.winfo_width() - 100
+                if max_w < 200: max_w = 600
+                if img.width > max_w:
+                    ratio = max_w / img.width
+                    img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.Resampling.LANCZOS)
+                
+                return ImageTk.PhotoImage(img)
+        except Exception:
+            pass
+        return None
+
+    def _copy_to_clipboard(self, text: str):
+        """内部复制方法"""
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        if self.app:
+            self.app.update_status("✅ 代码已复制到剪贴板")
     
     def _render_latex(self, latex: str, fontsize: int = 16, is_inline: bool = False) -> ImageTk.PhotoImage:
         """使用 matplotlib.mathtext 渲染 LaTeX 公式为图片。
@@ -1113,6 +1358,8 @@ class MarkdownPreview(ctk.CTkFrame):
                     anchor=align if align != 'center' else 'center',
                 )
                 cell.grid(row=r, column=c, sticky='nsew', padx=0, pady=0)
+                # 为单元格绑定表格工具菜单，传入单元格内容和整行内容
+                cell.bind('<Button-3>', lambda e, t=cell_text, row=row, full=table_text: self._show_table_menu(e, t, row, full))
 
         # 配置列权重使表格均匀分布
         for c in range(num_cols):
@@ -1218,8 +1465,13 @@ class MarkdownPreview(ctk.CTkFrame):
             if is_task:
                 # 避免 ☑/☐ 在部分字体下显示为方块导致“乱码/错位”
                 checkbox = '☑' if checked else '☐'
-                self.text.insert('end', f'{indent}{checkbox} ', ('list_item',))
+                tag_name = f"task_cb_{item.get('line', 0)}"
+                self.text.insert('end', f'{indent}{checkbox}', ('list_item', 'task_checkbox', tag_name))
+                self.text.insert('end', ' ', ('list_item',))
                 self._insert_inline_elements(item_text, extra_tags=['list_item'])
+                
+                # 为复选框添加点击绑定（如果尚未绑定）
+                self.text.tag_bind('task_checkbox', '<Button-1>', self._on_checkbox_click)
             else:
                 if ordered:
                     number = get_number_format(item_level, level_counters[item_level])
@@ -1234,41 +1486,212 @@ class MarkdownPreview(ctk.CTkFrame):
     
     def _insert_image(self, alt: str, url: str):
         """插入图片占位"""
-        self.text.insert('end', f'🖼️ [{alt}]\n\n')
+        # 如果是本地图片或支持加载的，可以尝试显示，这里先简单实现点击查看
+        img_label = tk.Label(self.text, text=f'🖼️ [{alt}]', font=('Microsoft YaHei', 10), cursor='hand2', fg=COLORS.get('primary', '#3b82f6'), bg=self.text.cget('bg'))
+        img_label.bind('<Button-1>', lambda e: self._zoom_image(url))
+        self.text.window_create('end', window=img_label)
+        self.text.insert('end', '\n\n')
 
-    # ==================== 点击跳转方法 ====================
-    
-    def _on_double_click(self, event):
-        """双击预览区跳转到对应的源码行"""
+    def _zoom_image(self, url: str):
+        """查看图片大图"""
+        if not url: return
         try:
-            # 获取点击位置
+            # 如果是相对路径，转换为绝对路径
+            if not os.path.isabs(url) and self.app and self.app.current_file:
+                url = os.path.join(os.path.dirname(self.app.current_file), url)
+            
+            if os.path.exists(url):
+                # 简单实现：使用系统默认应用打开
+                import platform
+                import subprocess
+                if platform.system() == 'Windows':
+                    os.startfile(url)
+                elif platform.system() == 'Darwin':
+                    subprocess.run(['open', url])
+                else:
+                    subprocess.run(['xdg-open', url])
+        except Exception as e:
+            print(f"Zoom image error: {e}")
+
+    def _show_table_menu(self, event, cell_text, row_data, table_text):
+        """显示表格快捷菜单"""
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label="复制单元格", command=lambda: self._copy_to_clipboard(cell_text))
+        menu.add_command(label="复制整行 (CSV)", command=lambda: self._copy_row_as_csv(row_data))
+        menu.add_separator()
+        menu.add_command(label="搜索并过滤此列", command=lambda: self._filter_table_by_cell(table_text, cell_text))
+        menu.add_command(label="转置表格预览", command=lambda: self._transpose_table(table_text))
+        menu.add_separator()
+        menu.add_command(label="整个表格复制为 CSV", command=lambda: self._copy_table_as(table_text, 'csv'))
+        menu.add_command(label="整个表格复制为 Markdown", command=lambda: self._copy_table_as(table_text, 'md'))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _filter_table_by_cell(self, table_text, filter_val):
+        """简单的表格过滤功能：根据选中内容过滤行"""
+        # 这个功能通常需要重新渲染表格，这里我们通过复制过滤后的 MD 到剪贴板或弹窗实现
+        try:
+            headers, rows, _ = parse_table(table_text)
+            if not headers: return
+            
+            # 过滤包含该值的行
+            filtered_rows = [row for row in rows if any(filter_val in str(cell) for cell in row)]
+            
+            # 构建新的 Markdown
+            new_md = []
+            new_md.append("| " + " | ".join(headers) + " |")
+            new_md.append("| " + " | ".join(["---"] * len(headers)) + " |")
+            for row in filtered_rows:
+                new_md.append("| " + " | ".join(row) + " |")
+            
+            filtered_text = "\n".join(new_md)
+            self._copy_to_clipboard(filtered_text)
+            if self.app:
+                self.app.update_status(f"🔍 已过滤表格并复制 (剩余 {len(filtered_rows)} 行)", is_temp=True)
+        except Exception as e:
+            print(f"Filter table error: {e}")
+
+    def _transpose_table(self, table_text):
+        """转置表格内容并重新渲染（临时预览）"""
+        try:
+            headers, rows, alignments = parse_table(table_text)
+            if not headers: return
+            
+            all_data = [headers] + rows
+            # 使用 zip 转置
+            transposed = list(map(list, zip(*all_data)))
+            
+            # 构建新的 Markdown 表格字符串
+            new_md = []
+            new_md.append("| " + " | ".join(transposed[0]) + " |")
+            new_md.append("| " + " | ".join(["---"] * len(transposed[0])) + " |")
+            for row in transposed[1:]:
+                new_md.append("| " + " | ".join(row) + " |")
+            
+            transposed_text = "\n".join(new_md)
+            
+            # 这里简单处理：弹窗显示或提示用户复制。
+            # 更好的做法是原地替换预览，但因为预览是全量生成的，这比较复杂。
+            # 先实现复制到剪贴板并提示。
+            self._copy_to_clipboard(transposed_text)
+            if self.app:
+                self.app.update_status("🔄 已转置表格并复制到剪贴板", is_temp=True)
+        except Exception as e:
+            print(f"Transpose table error: {e}")
+
+    def _copy_row_as_csv(self, row_data):
+        """复制整行数据为 CSV 格式"""
+        import csv
+        import io
+        si = io.StringIO()
+        cw = csv.writer(si)
+        cw.writerow(row_data)
+        self._copy_to_clipboard(si.getvalue().strip())
+
+    def _copy_table_as(self, table_text, fmt):
+        """将表格转换格式并复制到剪贴板"""
+        try:
+            if fmt == 'md':
+                content = table_text
+            else:
+                headers, rows, _ = parse_table(table_text)
+                import csv
+                import io
+                output = BytesIO() # Use BytesIO or io.StringIO
+                si = io.StringIO()
+                cw = csv.writer(si)
+                cw.writerow(headers)
+                cw.writerows(rows)
+                content = si.getvalue()
+            
+            self.clipboard_clear()
+            self.clipboard_append(content)
+            if self.app:
+                self.app.update_status(f"✅ 表格已复制为 {fmt.upper()}")
+        except Exception as e:
+            print(f"Copy table error: {e}")
+
+    def _show_footnote_tooltip(self, event, ref):
+        """显示脚注内容悬浮窗"""
+        content = self._footnotes.get(ref)
+        if not content: return
+        
+        # 简单实现：使用 Toplevel
+        self._fn_tooltip = tk.Toplevel(self)
+        self._fn_tooltip.wm_overrideredirect(True)
+        self._fn_tooltip.wm_geometry(f"+{event.x_root+15}+{event.y_root+10}")
+        
+        frame = tk.Frame(self._fn_tooltip, bg='#ffffe1', padx=5, pady=5, borderwidth=1, relief='solid')
+        frame.pack()
+        
+        lbl = tk.Label(frame, text=content, bg='#ffffe1', font=('Microsoft YaHei', 9), wraplength=300, justify='left')
+        lbl.pack()
+
+    def _hide_footnote_tooltip(self):
+        """隐藏脚注悬浮窗"""
+        if hasattr(self, '_fn_tooltip'):
+            self._fn_tooltip.destroy()
+            del self._fn_tooltip
+
+    def _on_checkbox_click(self, event):
+        """点击预览区复选框，同步修改源码"""
+        try:
+            index = self.text.index(f"@{event.x},{event.y}")
+            tags = self.text.tag_names(index)
+            for tag in tags:
+                if tag.startswith('task_cb_'):
+                    line_num = int(tag.replace('task_cb_', ''))
+                    if line_num > 0:
+                        self._toggle_source_checkbox(line_num)
+                    break
+            return "break"
+        except Exception:
+            pass
+
+    def _toggle_source_checkbox(self, line_num: int):
+        """切换源码中对应行的复选框状态"""
+        if not self.app or not hasattr(self.app, 'input_text'):
+            return
+        try:
+            text_widget = self.app.input_text._textbox
+            line_content = text_widget.get(f"{line_num}.0", f"{line_num}.end")
+            new_content = None
+            if '[ ]' in line_content:
+                new_content = line_content.replace('[ ]', '[x]', 1)
+            elif '[x]' in line_content:
+                new_content = line_content.replace('[x]', '[ ]', 1)
+            elif '[X]' in line_content:
+                new_content = line_content.replace('[X]', '[ ]', 1)
+            if new_content:
+                text_widget.delete(f"{line_num}.0", f"{line_num}.end")
+                text_widget.insert(f"{line_num}.0", new_content)
+                if hasattr(self.app, 'on_text_change'):
+                    self.app.on_text_change(None)
+        except Exception:
+            pass
+
+    def _on_double_click(self, event):
+        """鼠标双击事件处理：双击跳转到源码"""
+        try:
             index = self.text.index(f"@{event.x},{event.y}")
             line_num = int(index.split('.')[0])
-            
-            # 查找对应的源码行
             source_line = self._find_source_line_for_preview_line(line_num)
-            
             if source_line and self.on_jump_to_line:
                 self.on_jump_to_line(source_line)
-                
-                # 高亮显示跳转的行（短暂闪烁效果）
                 self._highlight_preview_line(line_num)
         except Exception:
             pass
-    
+
     def _find_source_line_for_preview_line(self, preview_line: int) -> int:
         """根据预览区行号查找对应的源码行号"""
-        # 从 paragraph_map 中查找最近的映射
         if not self.paragraph_map:
-            return preview_line  # 回退到简单映射
-        
-        # 查找最近的段落映射
+            return preview_line
         nearest_line = None
         min_distance = float('inf')
-        
         for line_start, info in self.paragraph_map.items():
             try:
-                # line_start 是预览区的行位置
                 line_pos = int(str(line_start).split('.')[0])
                 distance = abs(line_pos - preview_line)
                 if distance < min_distance:
@@ -1276,38 +1699,194 @@ class MarkdownPreview(ctk.CTkFrame):
                     nearest_line = info.get('md_line', preview_line)
             except Exception:
                 continue
-        
         return nearest_line if nearest_line else preview_line
-    
+
+    def toggle_floating_toc(self):
+        """切换浮动大纲显示"""
+        self._toc_visible = not self._toc_visible
+        if self._toc_visible:
+            self._show_floating_toc()
+        else:
+            self._hide_floating_toc()
+
+    def _show_floating_toc(self):
+        """显示浮动大纲 - 支持拖拽"""
+        if not self._toc_frame:
+            self._toc_frame = tk.Frame(
+                self, 
+                bg=COLORS.get('bg_card', '#ffffff'),
+                highlightthickness=1,
+                highlightbackground=COLORS.get('border', '#e5e7eb'),
+                cursor='fleur' # 移动光标
+            )
+            
+            # 标题栏（用于拖拽）
+            title_lbl = tk.Label(
+                self._toc_frame, 
+                text="文档大纲 ✥", 
+                font=('Microsoft YaHei', 9, 'bold'),
+                bg=COLORS.get('bg_card', '#ffffff'),
+                fg=COLORS.get('text_secondary', '#6b7280'),
+                cursor='fleur'
+            )
+            title_lbl.pack(side='top', fill='x', padx=5, pady=2)
+            
+            # 绑定拖拽事件
+            title_lbl.bind('<Button-1>', self._on_toc_drag_start)
+            title_lbl.bind('<B1-Motion>', self._on_toc_drag_motion)
+            
+            self._toc_listbox = tk.Listbox(
+                self._toc_frame,
+                font=('Microsoft YaHei', 9),
+                bg=COLORS.get('bg_card', '#ffffff'),
+                fg=COLORS.get('text_primary', '#111827'),
+                borderwidth=0,
+                highlightthickness=0,
+                selectbackground=COLORS.get('primary', '#3b82f6'),
+                selectforeground='white',
+                activestyle='none'
+            )
+            self._toc_listbox.pack(side='top', fill='both', expand=True, padx=2, pady=2)
+            self._toc_listbox.bind('<<ListboxSelect>>', self._on_toc_select)
+            self._toc_frame.place(relx=1.0, rely=0.1, anchor='ne', width=180, height=300, x=-20)
+        self._toc_frame.lift()
+        self._update_floating_toc_content()
+
+    def _on_toc_drag_start(self, event):
+        """记录拖拽起始位置"""
+        self._toc_drag_data = {"x": event.x, "y": event.y}
+
+    def _on_toc_drag_motion(self, event):
+        """处理拖拽移动"""
+        if not hasattr(self, '_toc_drag_data'): return
+        
+        delta_x = event.x - self._toc_drag_data["x"]
+        delta_y = event.y - self._toc_drag_data["y"]
+        
+        new_x = self._toc_frame.winfo_x() + delta_x
+        new_y = self._toc_frame.winfo_y() + delta_y
+        
+        # 限制在预览区范围内
+        max_x = self.winfo_width() - self._toc_frame.winfo_width()
+        max_y = self.winfo_height() - self._toc_frame.winfo_height()
+        
+        new_x = max(0, min(new_x, max_x))
+        new_y = max(0, min(new_y, max_y))
+        
+        self._toc_frame.place(relx=0, rely=0, anchor='nw', x=new_x, y=new_y)
+
+    def _hide_floating_toc(self):
+        """隐藏浮动大纲"""
+        if self._toc_frame:
+            self._toc_frame.place_forget()
+        self._toc_visible = False
+
+    def _update_floating_toc_content(self):
+        """更新浮动大纲内容"""
+        if not self._toc_listbox:
+            return
+
+        # 如果没有记录的标题，尝试从当前文本内容重建，避免空白
+        if not self._headings:
+            try:
+                rebuilt = []
+                lines = self.text.get("1.0", "end-1c").split("\n")
+                for idx, line in enumerate(lines, start=1):
+                    stripped = line.lstrip()
+                    if stripped.startswith("#"):
+                        level = len(stripped) - len(stripped.lstrip("#"))
+                        title = stripped.lstrip("#").strip()
+                        if title:
+                            rebuilt.append((level, title, idx))
+                if rebuilt:
+                    self._headings = rebuilt
+            except Exception:
+                pass
+
+        self._toc_listbox.delete(0, 'end')
+        if not self._headings:
+            self._toc_listbox.insert('end', "(无标题)")
+            return
+        for item in self._headings:
+            try:
+                if len(item) == 4:
+                    level, title, _, _ = item
+                elif len(item) == 3:
+                    level, title, _ = item
+                else:
+                    continue
+                indent = "  " * (level - 1)
+                self._toc_listbox.insert('end', f"{indent}{title}")
+            except Exception:
+                continue
+
+    def _on_toc_select(self, event):
+        """点击大纲项跳转"""
+        selection = self._toc_listbox.curselection()
+        if not selection or not self._headings:
+            return
+        idx = selection[0]
+        if idx < len(self._headings):
+            _, _, source_line = self._headings[idx]
+            if self.on_jump_to_line:
+                self.on_jump_to_line(source_line)
+
+    def highlight_search_term(self, term: str, case_sensitive: bool = False):
+        """在预览区高亮搜索词"""
+        self.text.tag_remove("search_highlight", "1.0", "end")
+        if not term:
+            return
+
+        # 配置高亮样式
+        self.text.tag_configure("search_highlight", background="#FFFF00", foreground="#000000")
+        
+        start_pos = "1.0"
+        count = tk.IntVar()
+        while True:
+            start_pos = self.text.search(
+                term, start_pos, stopindex="end", 
+                nocase=not case_sensitive, count=count
+            )
+            if not start_pos:
+                break
+            end_pos = f"{start_pos}+{count.get()}c"
+            self.text.tag_add("search_highlight", start_pos, end_pos)
+            start_pos = end_pos
+
+    def _jump_to_anchor(self, anchor_id: str):
+        """平滑跳转到内部锚点"""
+        if hasattr(self, '_anchor_map') and anchor_id in self._anchor_map:
+            target_idx = self._anchor_map[anchor_id]
+            # 获取目标行的 y 比例
+            line_num = int(target_idx.split('.')[0])
+            total_lines = int(self.text.index('end-1c').split('.')[0])
+            target_pos = (line_num - 1) / total_lines
+            self._smooth_scroll_to(target_pos)
+            return "break"
+        return None
+
     def _highlight_preview_line(self, line_num: int):
         """短暂高亮预览区的行"""
         try:
-            # 添加高亮标签
             self.text.tag_configure('jump_highlight', background='#fef3c7')
             self.text.tag_add('jump_highlight', f"{line_num}.0", f"{line_num}.end")
-            
-            # 300ms 后移除高亮
             self.after(300, lambda: self._remove_highlight(line_num))
         except Exception:
             pass
-    
+
     def _remove_highlight(self, line_num: int):
         """移除行高亮"""
         try:
             self.text.tag_remove('jump_highlight', f"{line_num}.0", f"{line_num}.end")
         except Exception:
             pass
-    
+
     def set_jump_callback(self, callback):
-        """设置跳转回调函数
-        
-        Args:
-            callback: 回调函数，接收源码行号作为参数
-        """
+        """设置跳转回调函数"""
         self.on_jump_to_line = callback
 
     def _jump_to_editor_from_context(self):
-        """右键菜单触发跳转：定位到当前预览行对应的源码"""
+        """右键菜单触发跳转"""
         try:
             index = self.text.index(tk.INSERT)
             line_num = int(index.split('.')[0])
@@ -1318,70 +1897,97 @@ class MarkdownPreview(ctk.CTkFrame):
         except Exception:
             pass
 
-    # ==================== 滚动同步方法 ====================
-    
     def _on_scrollbar(self, *args):
         """滚动条事件处理"""
         self.text.yview(*args)
-        # 触发滚动同步
         try:
             first = self.text.yview()[0]
-            if (
-                getattr(self, '_sync_scroll_enabled', True)
-                and hasattr(self, 'on_scroll')
-                and self.on_scroll
-                and not getattr(self, '_scroll_updating', False)
-            ):
+            if (getattr(self, '_sync_scroll_enabled', True) and self.on_scroll and not getattr(self, '_scroll_updating', False)):
                 self.on_scroll(float(first))
         except Exception:
             pass
-    
+
     def _on_mousewheel(self, event):
-        """鼠标滚轮事件处理"""
-        # 执行滚动
-        if event.num == 4:  # Linux scroll up
-            self.text.yview_scroll(-3, "units")
-        elif event.num == 5:  # Linux scroll down
-            self.text.yview_scroll(3, "units")
-        else:  # Windows/Mac
-            self.text.yview_scroll(-1 * (event.delta // 120), "units")
-        
-        # 触发滚动同步
-        try:
-            first = self.text.yview()[0]
-            if hasattr(self, 'on_scroll') and self.on_scroll and not getattr(self, '_scroll_updating', False):
-                self.on_scroll(float(first))
-        except Exception:
-            pass
-        
+        """预览区平滑滚动实现"""
+        delta = -1 * (event.delta // 120)
+        current_pos = self.text.yview()[0]
+        increment = 0.02 * delta
+        target_pos = max(0.0, min(1.0, current_pos + increment))
+        self._smooth_scroll_to(target_pos)
         return "break"
-    
+
+    def _smooth_scroll_to(self, target_pos):
+        """执行预览区平滑滚动动画（减小抖动）"""
+        if self._smooth_scroll_timer:
+            self.after_cancel(self._smooth_scroll_timer)
+        current_pos = self.text.yview()[0]
+        diff = target_pos - current_pos
+        if abs(diff) < 0.0008:
+            self.text.yview_moveto(target_pos)
+            return
+        step = diff * 0.12
+        # 限制最小步长，避免过冲
+        if diff > 0:
+            step = max(step, 0.002)
+        else:
+            step = min(step, -0.002)
+        new_pos = current_pos + step
+        self.text.yview_moveto(new_pos)
+        if self.on_scroll:
+            self.on_scroll(new_pos)
+        self._smooth_scroll_timer = self.after(10, lambda: self._smooth_scroll_to(target_pos))
+
     def _on_text_scroll(self, first, last):
-        """文本滚动事件处理，同步到编辑器"""
-        # 更新滚动条
+        """文本滚动事件处理，同步到编辑器并更新大纲追踪和进度条"""
         self.scrollbar.set(first, last)
         
-        # 触发滚动同步回调
-        if (
-            getattr(self, '_sync_scroll_enabled', True)
-            and hasattr(self, 'on_scroll')
-            and self.on_scroll
-            and not getattr(self, '_scroll_updating', False)
-        ):
+        # 1. 触发滚动同步回调
+        if (getattr(self, '_sync_scroll_enabled', True) and self.on_scroll and not getattr(self, '_scroll_updating', False)):
             try:
                 self.on_scroll(float(first))
             except Exception:
                 pass
-    
-    def sync_scroll_to(self, position: float):
-        """同步滚动到指定位置
         
-        Args:
-            position: 滚动位置 (0.0 - 1.0)
-        """
+        # 2. 更新大纲追踪高亮
+        if self._toc_visible:
+            self.after(50, self._track_current_heading)
+            
+        # 3. 更新阅读进度条
+        self._update_reading_progress(float(first))
+
+    def _track_current_heading(self):
+        """追踪当前可见区域所在的章节并高亮大纲项"""
+        if not self._toc_listbox or not self._headings:
+            return
+            
+        try:
+            # 获取可视区域顶部的行号
+            first_visible_idx = self.text.index("@0,0")
+            visible_line = int(first_visible_idx.split('.')[0])
+            
+            # 找到当前所在的源码行号
+            source_line = self._find_source_line_for_preview_line(visible_line)
+            
+            # 在 headings 中寻找当前最匹配的标题
+            active_idx = -1
+            for i, (level, title, line_num) in enumerate(self._headings):
+                if line_num <= source_line:
+                    active_idx = i
+                else:
+                    break
+            
+            # 更新列表框选中状态
+            self._toc_listbox.selection_clear(0, 'end')
+            if active_idx != -1:
+                self._toc_listbox.selection_set(active_idx)
+                self._toc_listbox.see(active_idx)
+        except Exception:
+            pass
+
+    def sync_scroll_to(self, position: float):
+        """同步滚动到指定位置"""
         if getattr(self, '_scroll_updating', False):
             return
-        
         self._scroll_updating = True
         try:
             self.text.yview_moveto(position)
@@ -1389,67 +1995,43 @@ class MarkdownPreview(ctk.CTkFrame):
             pass
         finally:
             self._scroll_updating = False
-    
+
     def set_sync_scroll_enabled(self, enabled: bool):
-        """设置是否启用同步滚动
-        
-        Args:
-            enabled: 是否启用
-        """
+        """设置是否启用同步滚动"""
         self._sync_scroll_enabled = enabled
-    
+
     def apply_theme(self, theme_config: dict):
-        """应用预览主题
-        
-        Args:
-            theme_config: 主题配置字典，来自 PreviewTheme.to_tkinter_config()
-        """
+        """应用预览主题"""
         try:
-            # 更新背景色
             bg = theme_config.get('background', '#FFFFFF')
             fg = theme_config.get('text_color', '#111827')
             self.text.configure(bg=bg, fg=fg)
-            
-            # 更新字体
             font_family = theme_config.get('font_family', '宋体')
             font_size = theme_config.get('font_size', 16)
             self.text.configure(font=(font_family, font_size))
-            
-            # 更新标签样式
             h1_color = theme_config.get('h1_color', '#1f2937')
             h1_size = theme_config.get('h1_size', 28)
             self.text.tag_configure('h1', foreground=h1_color, font=('黑体', h1_size, 'bold'))
-            
             h2_color = theme_config.get('h2_color', '#374151')
             h2_size = theme_config.get('h2_size', 22)
             self.text.tag_configure('h2', foreground=h2_color, font=('黑体', h2_size, 'bold'))
-            
             h3_color = theme_config.get('h3_color', '#4b5563')
             h3_size = theme_config.get('h3_size', 18)
             self.text.tag_configure('h3', foreground=h3_color, font=('黑体', h3_size, 'bold'))
-            
             h4_color = theme_config.get('h4_color', '#6b7280')
             h4_size = theme_config.get('h4_size', 16)
             self.text.tag_configure('h4', foreground=h4_color, font=('黑体', h4_size, 'bold'))
-            
-            # 链接颜色
             link_color = theme_config.get('link_color', '#0000FF')
             self.text.tag_configure('link', foreground=link_color)
-            
-            # 代码样式
             code_bg = theme_config.get('code_bg', '#F5F5F5')
             code_color = theme_config.get('code_color', '#1F2937')
             code_font = theme_config.get('code_font', 'Consolas')
             self.text.tag_configure('code', background=code_bg, foreground=code_color, font=(code_font, 10))
-            
             code_block_bg = theme_config.get('code_block_bg', '#FAFAFA')
             code_block_color = theme_config.get('code_block_color', '#1F2937')
             self.text.tag_configure('code_block', background=code_block_bg, foreground=code_block_color, font=(code_font, 10))
-            
-            # 引用样式
             blockquote_bg = theme_config.get('blockquote_bg', '#f9fafb')
             blockquote_color = theme_config.get('blockquote_color', '#6B7280')
             self.text.tag_configure('quote', background=blockquote_bg, foreground=blockquote_color)
-            
         except Exception as e:
             print(f"应用预览主题失败: {e}")

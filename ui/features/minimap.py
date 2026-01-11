@@ -177,6 +177,12 @@ class Minimap:
             return
         
         try:
+            # 1. 绘制搜索匹配高亮
+            self._draw_search_highlights()
+            
+            # 2. 绘制代码折叠标记
+            self._draw_folding_markers()
+            
             yview = self._text.yview()
             self._last_yview = yview
             
@@ -218,6 +224,43 @@ class Minimap:
         except Exception:
             pass
     
+    def _draw_search_highlights(self):
+        """在迷你地图上绘制搜索匹配项"""
+        self.canvas.delete('search_mark')
+        if not hasattr(self.app, 'global_search_replace') or not self.app.global_search_replace.matches:
+            return
+            
+        for start_idx, end_idx in self.app.global_search_replace.matches:
+            try:
+                line_num = int(start_idx.split('.')[0])
+                y = (line_num / self._total_lines) * self._content_height
+                self.canvas.create_line(
+                    0, y, self._width, y,
+                    fill='#FF8C00', width=2, tags='search_mark'
+                )
+            except:
+                continue
+
+    def _draw_folding_markers(self):
+        """在迷你地图上绘制折叠区域标记"""
+        self.canvas.delete('fold_mark')
+        # 查找 app 中的 code_folding 功能
+        app = self.text_widget.winfo_toplevel()
+        if not hasattr(app, 'code_folding'):
+            return
+            
+        for region in app.code_folding.get_fold_regions():
+            if region.is_folded:
+                try:
+                    y = (region.start_line / self._total_lines) * self._content_height
+                    # 绘制一个小的紫色点或短横线表示折叠点
+                    self.canvas.create_line(
+                        self._width - 15, y, self._width - 5, y,
+                        fill='#7c3aed', width=2, tags='fold_mark'
+                    )
+                except:
+                    continue
+
     def _get_line_style(self, line: str) -> tuple:
         stripped = line.strip()
         

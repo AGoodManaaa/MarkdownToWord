@@ -15,6 +15,10 @@ class StatusBarFeature:
         self.word_count_label = None
         self.cursor_pos_label = None
         self.progress = None
+        self._temp_msg_id = None
+        self._pulse_timer = None
+        self._pulse_count = 0
+        self._default_status = "✨ 就绪 - 支持表格、公式、图片等完整Markdown语法"
 
     def create(self):
         container = ctk.CTkFrame(self.app, fg_color=COLORS['bg_light'], height=36, corner_radius=0)
@@ -71,10 +75,52 @@ class StatusBarFeature:
         )
         self.cursor_pos_label.pack(side="left", padx=(12, 0), pady=8)
 
-    def update_status(self, message: str):
+    def update_status(self, message: str, is_temp: bool = False, duration_ms: int = 3000, pulse: bool = False):
         try:
             if self.status_label is not None:
+                if self._temp_msg_id:
+                    self.app.after_cancel(self._temp_msg_id)
+                    self._temp_msg_id = None
+                
                 self.status_label.configure(text=message)
+                
+                if pulse:
+                    self._start_pulse()
+                
+                if is_temp:
+                    self._temp_msg_id = self.app.after(duration_ms, self._restore_default_status)
+        except Exception:
+            pass
+
+    def _start_pulse(self):
+        """开始呼吸灯效果反馈"""
+        if self._pulse_timer:
+            self.app.after_cancel(self._pulse_timer)
+        self._pulse_count = 0
+        self._pulse_step()
+
+    def _pulse_step(self):
+        """呼吸灯单步动画"""
+        if not self.status_label: return
+        
+        # 定义颜色序列
+        colors = ["#3b82f6", "#60a5fa", "#93c5fd", "#60a5fa", "#3b82f6"]
+        
+        if self._pulse_count < len(colors) * 2: # 循环两次
+            color = colors[self._pulse_count % len(colors)]
+            self.status_label.configure(text_color=color)
+            self._pulse_count += 1
+            self._pulse_timer = self.app.after(150, self._pulse_step)
+        else:
+            self.status_label.configure(text_color=COLORS['text_secondary'])
+            self._pulse_timer = None
+
+    def _restore_default_status(self):
+        """恢复默认状态栏信息"""
+        try:
+            self._temp_msg_id = None
+            if self.status_label:
+                self.status_label.configure(text=self._default_status)
         except Exception:
             pass
 

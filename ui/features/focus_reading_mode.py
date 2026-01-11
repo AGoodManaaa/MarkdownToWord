@@ -49,40 +49,29 @@ class FocusModeFeature:
             if hasattr(self.app, 'sidebar_visible'):
                 self.app.sidebar_visible = False
         
-        # 2. 隐藏预览区
-        if hasattr(self.app, 'preview_card') and self.app.preview_card.winfo_ismapped():
+        # 2. 隐藏预览区 (从 PanedWindow 移除)
+        if hasattr(self.app, 'preview_card') and self.app.preview_visible:
             self._saved_widgets['preview'] = True
-            self.app.preview_card.grid_forget()
+            if hasattr(self.app, 'paned_window'):
+                self.app.paned_window.forget(self.app.preview_card)
             if hasattr(self.app, 'preview_visible'):
                 self.app.preview_visible = False
         
-        # 3. 布局调整：专注模式 - 增加宽度到 1200
-        self.app.main_frame.grid_columnconfigure(0, weight=1)
-        self.app.main_frame.grid_columnconfigure(1, weight=0, minsize=1200)
-        self.app.main_frame.grid_columnconfigure(2, weight=1)
+        # 3. 布局调整：专注模式 - 让编辑器占满 PanedWindow
+        # 已经在 PanedWindow 中，只需确保它是唯一的
         
-        # 将编辑区移到中间列
-        if hasattr(self.app, 'input_card'):
-            self._saved_widgets['input_pos'] = True # 标记位置改变
-            self.app.input_card.grid(row=0, column=1, sticky="nsew", padx=40, pady=20)
-            
-        # 4. 隐藏中间工具栏 (智能判断：不隐藏右侧pack的frame)
+        # 4. 隐藏中间工具栏 (智能判断：不隐藏右侧按钮组)
         if hasattr(self.app, 'header'):
             for child in self.app.header.winfo_children():
-                if isinstance(child, ctk.CTkFrame) and child.winfo_ismapped():
-                    # 检查pack side，跳过右侧的（保留功能按钮）
-                    try:
-                        info = child.pack_info()
-                        if info.get('side') == 'right':
-                            continue
-                    except:
-                        pass
-                    
-                    # 隐藏左侧/中间的大工具栏
-                    # 通常左侧是标题(children=1)，中间是工具(children>5)
-                    if len(child.winfo_children()) > 3:
+                # 检查 pack side，如果是 left 或中间的工具栏则隐藏
+                # 假设右侧是 btn_frame
+                try:
+                    info = child.pack_info()
+                    if info.get('side') != 'right' and len(child.winfo_children()) > 2:
                         self._saved_widgets[f'toolbar_{id(child)}'] = child
                         child.pack_forget()
+                except:
+                    pass
         
         # 5. 隐藏状态栏
         if hasattr(self.app, 'status_bar') and self.app.status_bar.winfo_ismapped():
@@ -152,21 +141,12 @@ class FocusModeFeature:
                 if hasattr(self.app, 'sidebar_visible'):
                     self.app.sidebar_visible = True
         
-        # 恢复编辑区到左侧
-        if hasattr(self.app, 'input_card'):
-            self.app.input_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-            
         # 恢复预览区
         if self._saved_widgets.get('preview'):
-            if hasattr(self.app, 'preview_card'):
-                self.app.preview_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+            if hasattr(self.app, 'preview_card') and hasattr(self.app, 'paned_window'):
+                self.app.paned_window.add(self.app.preview_card)
                 if hasattr(self.app, 'preview_visible'):
                     self.app.preview_visible = True
-        
-        # 恢复列权重
-        self.app.main_frame.grid_columnconfigure(0, weight=3)
-        self.app.main_frame.grid_columnconfigure(1, weight=2)
-        self.app.main_frame.grid_columnconfigure(2, weight=0)
         
         # 恢复工具栏
         if hasattr(self.app, 'header'):
@@ -188,6 +168,8 @@ class FocusModeFeature:
                 self.app.status_bar.pack(side="bottom", fill="x")
         
         self.is_active = False
+        self._saved_widgets = {}
+        self._saved_state = {}
         
         # 更新状态
         try:
@@ -246,43 +228,27 @@ class ReadingModeFeature:
             if hasattr(self.app, 'sidebar_visible'):
                 self.app.sidebar_visible = False
         
-        # 2. 隐藏编辑区
-        if hasattr(self.app, 'input_card') and self.app.input_card.winfo_ismapped():
+        # 2. 隐藏编辑区 (从 PanedWindow 移除)
+        if hasattr(self.app, 'input_card') and hasattr(self.app, 'paned_window'):
             self._saved_widgets['input'] = True
-            self.app.input_card.grid_forget()
+            self.app.paned_window.forget(self.app.input_card)
         
         # 3. 隐藏中间工具栏
         if hasattr(self.app, 'header'):
             for child in self.app.header.winfo_children():
-                if isinstance(child, ctk.CTkFrame) and child.winfo_ismapped():
-                    # 检查pack side，跳过右侧的
-                    try:
-                        info = child.pack_info()
-                        if info.get('side') == 'right':
-                            continue
-                    except:
-                        pass
-                    
-                    # 隐藏左侧/中间的大工具栏
-                    if len(child.winfo_children()) > 5:
+                try:
+                    info = child.pack_info()
+                    if info.get('side') != 'right' and len(child.winfo_children()) > 3:
                         self._saved_widgets[f'toolbar_{id(child)}'] = child
                         child.pack_forget()
+                except:
+                    pass
 
         # 4. 隐藏状态栏
         if hasattr(self.app, 'status_bar') and self.app.status_bar.winfo_ismapped():
             self._saved_widgets['status_bar'] = True
             self.app.status_bar.pack_forget()
             
-        # 5. 布局调整 - 宽度 1400
-        self.app.main_frame.grid_columnconfigure(0, weight=1)
-        self.app.main_frame.grid_columnconfigure(1, weight=0, minsize=self.reading_width)
-        self.app.main_frame.grid_columnconfigure(2, weight=1)
-        
-        if hasattr(self.app, 'preview_card'):
-            self.app.preview_card.grid(row=0, column=1, sticky="nsew", padx=40, pady=20)
-            if hasattr(self.app, 'preview_visible'):
-                self.app.preview_visible = True
-                
         self.is_active = True
         
         # 6. 添加浮动退出按钮
@@ -326,10 +292,10 @@ class ReadingModeFeature:
             except:
                 pass
 
-        # 恢复布局
-        self.app.main_frame.grid_columnconfigure(0, weight=3)
-        self.app.main_frame.grid_columnconfigure(1, weight=2)
-        self.app.main_frame.grid_columnconfigure(2, weight=0)
+        # 恢复编辑区
+        if self._saved_widgets.get('input'):
+            if hasattr(self.app, 'input_card') and hasattr(self.app, 'paned_window'):
+                self.app.paned_window.add(self.app.input_card, before=self.app.preview_card if hasattr(self.app, 'preview_card') else None)
         
         # 恢复侧边栏
         if self._saved_widgets.get('sidebar'):
@@ -338,15 +304,6 @@ class ReadingModeFeature:
                 if hasattr(self.app, 'sidebar_visible'):
                     self.app.sidebar_visible = True
         
-        # 恢复编辑区
-        if self._saved_widgets.get('input'):
-            if hasattr(self.app, 'input_card'):
-                self.app.input_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        
-        # 恢复预览区
-        if hasattr(self.app, 'preview_card'):
-            self.app.preview_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
-            
         # 恢复工具栏
         if hasattr(self.app, 'header'):
             for key, widget in self._saved_widgets.items():
@@ -367,6 +324,8 @@ class ReadingModeFeature:
                 self.app.status_bar.pack(side="bottom", fill="x")
         
         self.is_active = False
+        self._saved_widgets = {}
+        self._saved_state = {}
         
         # 恢复按钮样式
         try:

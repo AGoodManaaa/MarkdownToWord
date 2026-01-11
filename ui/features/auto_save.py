@@ -24,6 +24,9 @@ class AutoSaveFeature:
             if content.strip():
                 with open(self.file_path, 'w', encoding='utf-8') as f:
                     f.write(content)
+                # 增加状态栏反馈，并开启 Pulse 呼吸灯效果
+                if hasattr(self.app, 'status_bar_feature'):
+                    self.app.status_bar_feature.update_status("💾 已自动保存", is_temp=True, duration_ms=2000, pulse=True)
         except Exception:
             pass
         finally:
