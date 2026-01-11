@@ -51,10 +51,11 @@ class PreciseScrollSync:
         # 同步锁防止循环触发
         self._sync_lock = False
         self._last_sync_time = 0.0
-        self._sync_cooldown = 0.05  # 50ms 冷却时间
+        self._sync_cooldown = 0.10  # 100ms 冷却时间，降低滚动抖动
         
         # 平滑滚动参数
-        self._smooth_scroll_enabled = True
+        # 默认关闭：平滑动画在双向同步场景下容易产生“抖动/回弹”
+        self._smooth_scroll_enabled = False
         self._smooth_scroll_duration = 150  # ms
         self._smooth_scroll_steps = 10
         
@@ -530,10 +531,12 @@ class PreciseScrollSync:
     def _scroll_preview_to(self, position: float) -> None:
         """滚动预览区到指定位置"""
         try:
-            if hasattr(self.preview, 'text'):
-                self.preview.text.yview_moveto(position)
-            elif hasattr(self.preview, 'sync_scroll_to'):
+            # 优先使用 preview.sync_scroll_to：该方法内部会设置 _scroll_updating，
+            # 避免触发 MarkdownPreview._on_text_scroll -> on_scroll 的回环导致“滚动回弹”。
+            if hasattr(self.preview, 'sync_scroll_to'):
                 self.preview.sync_scroll_to(position)
+            elif hasattr(self.preview, 'text'):
+                self.preview.text.yview_moveto(position)
         except Exception:
             pass
     

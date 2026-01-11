@@ -28,6 +28,31 @@ class PreviewSyncFeature:
         self._last_line_map_ts = 0.0
         self._throttle_ms_line_map = 500  # 500ms 节流
 
+        self._scroll_sync_enabled = True
+
+        self._last_editor_scroll_ts = 0.0
+        self._last_preview_scroll_ts = 0.0
+        self._last_editor_scroll_pos = None
+        self._last_preview_scroll_pos = None
+        self._scroll_throttle_ms = 80
+        self._scroll_delta_threshold = 0.004
+
+    def set_scroll_sync_enabled(self, enabled: bool) -> None:
+        try:
+            self._scroll_sync_enabled = bool(enabled)
+        except Exception:
+            self._scroll_sync_enabled = True
+
+        try:
+            if hasattr(self.app, 'preview') and hasattr(self.app.preview, 'set_sync_scroll_enabled'):
+                self.app.preview.set_sync_scroll_enabled(self._scroll_sync_enabled)
+        except Exception:
+            pass
+
+    def toggle_scroll_sync(self) -> bool:
+        self.set_scroll_sync_enabled(not bool(getattr(self, '_scroll_sync_enabled', True)))
+        return bool(getattr(self, '_scroll_sync_enabled', True))
+
     def _init_precise_sync(self):
         """延迟初始化精确滚动同步"""
         if self._precise_sync is not None:
@@ -255,8 +280,19 @@ class PreviewSyncFeature:
     def on_editor_scroll(self, position: float):
         """编辑器滚动时同步预览区（使用精确同步）"""
         try:
+            if not bool(getattr(self, '_scroll_sync_enabled', True)):
+                return
             if not hasattr(self.app, 'preview') or not getattr(self.app, 'preview_visible', True):
                 return
+
+            now = time.monotonic()
+            if (now - float(getattr(self, '_last_editor_scroll_ts', 0.0))) < (float(self._scroll_throttle_ms) / 1000.0):
+                return
+            last_pos = getattr(self, '_last_editor_scroll_pos', None)
+            if isinstance(last_pos, (int, float)) and abs(float(position) - float(last_pos)) < float(self._scroll_delta_threshold):
+                return
+            self._last_editor_scroll_ts = now
+            self._last_editor_scroll_pos = float(position)
             
             # 初始化精确同步
             self._init_precise_sync()
@@ -274,8 +310,19 @@ class PreviewSyncFeature:
     def on_preview_scroll(self, position: float):
         """预览区滚动时同步编辑器（使用精确同步）"""
         try:
+            if not bool(getattr(self, '_scroll_sync_enabled', True)):
+                return
             if not hasattr(self.app, 'input_editor'):
                 return
+
+            now = time.monotonic()
+            if (now - float(getattr(self, '_last_preview_scroll_ts', 0.0))) < (float(self._scroll_throttle_ms) / 1000.0):
+                return
+            last_pos = getattr(self, '_last_preview_scroll_pos', None)
+            if isinstance(last_pos, (int, float)) and abs(float(position) - float(last_pos)) < float(self._scroll_delta_threshold):
+                return
+            self._last_preview_scroll_ts = now
+            self._last_preview_scroll_pos = float(position)
             
             # 初始化精确同步
             self._init_precise_sync()

@@ -111,7 +111,7 @@ class StatusBarFeature:
         except Exception:
             pass
 
-    def update_counts(self, content: str):
+    def update_counts(self, content: str, selected_count: int = 0):
         try:
             if self.word_count_label is None:
                 return
@@ -119,7 +119,12 @@ class StatusBarFeature:
             line_count = (content or "").count('\n') + 1 if content else 0
             paragraphs = [p for p in (content or "").split('\n\n') if p.strip()]
             para_count = len(paragraphs)
-            self.word_count_label.configure(text=f"字数: {word_count} | 行数: {line_count} | 段落: {para_count}")
+            
+            text = f"字数: {word_count} | 行数: {line_count} | 段落: {para_count}"
+            if selected_count > 0:
+                text = f"选中: {selected_count} | " + text
+                
+            self.word_count_label.configure(text=text)
         except Exception:
             pass
 

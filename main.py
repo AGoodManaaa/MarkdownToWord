@@ -26,13 +26,54 @@ def main():
     parser.add_argument('output', nargs='?', help='输出Word文件路径（可选）')
     parser.add_argument('-t', '--text', help='直接输入Markdown文本（替代文件输入）')
     parser.add_argument('-b', '--base-dir', help='图片基准目录（用于相对路径解析）')
+    parser.add_argument('-B', '--batch-dir', help='批量转换目录（处理其中的 .md 文件）')
+    parser.add_argument('-O', '--output-dir', help='批量输出目录（默认与输入目录同级 output 文件夹）')
+    parser.add_argument('--overwrite', action='store_true', help='批量模式下允许覆盖已存在文件')
     
     args = parser.parse_args()
     
-    # 验证参数
+    def batch_convert(batch_dir: str, output_dir: str, overwrite: bool = False) -> None:
+        """
+        批量转换目录下的 .md 文件，输出为 .docx。
+        """
+        if not os.path.isdir(batch_dir):
+            print(f"错误: 目录不存在 - {batch_dir}")
+            sys.exit(1)
+
+        md_files = [f for f in os.listdir(batch_dir) if f.lower().endswith('.md')]
+        if not md_files:
+            print(f"未找到 Markdown 文件: {batch_dir}")
+            sys.exit(0)
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        for name in md_files:
+            input_path = os.path.join(batch_dir, name)
+            base_name = os.path.splitext(name)[0]
+            output_path = os.path.join(output_dir, base_name + '.docx')
+
+            if os.path.exists(output_path) and not overwrite:
+                print(f"跳过（已存在）: {output_path}")
+                continue
+
+            # 每个文件独立实例，保证 base_dir 就近取图
+            converter = MarkdownToWordConverter(base_dir=os.path.dirname(input_path))
+            success = converter.convert_file(input_path, output_path)
+            if not success:
+                print(f"失败: {input_path}")
+            else:
+                print(f"转换完成: {output_path}")
+
+    # 批量模式优先
+    if args.batch_dir:
+        out_dir = args.output_dir or os.path.join(os.path.abspath(args.batch_dir), 'output')
+        batch_convert(args.batch_dir, out_dir, args.overwrite)
+        return
+
+    # 单文件/文本模式
     if not args.input and not args.text:
         parser.print_help()
-        print("\n错误: 请提供输入文件或使用 -t 参数提供文本")
+        print("\n错误: 请提供输入文件、批量目录或使用 -t 参数提供文本")
         sys.exit(1)
     
     # 确定输出路径

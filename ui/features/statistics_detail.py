@@ -153,11 +153,12 @@ class StatisticsDetailFeature:
         english_time = english_words / self.ENGLISH_WORDS_PER_MINUTE
         return round(chinese_time + english_time, 1)
     
-    def update_status_bar(self, content: str) -> None:
+    def update_status_bar(self, content: str, selected_count: int = 0) -> None:
         """更新状态栏显示
         
         Args:
             content: 文档内容
+            selected_count: 选中字符数
         """
         stats = self.calculate_statistics(content)
         
@@ -170,6 +171,8 @@ class StatisticsDetailFeature:
         # 更新状态栏
         try:
             status_text = f"字数: {stats.chars_no_spaces} | 行数: {stats.lines} | 段落: {stats.paragraphs} | 阅读: {reading_time_str}"
+            if selected_count > 0:
+                status_text = f"选中: {selected_count} | " + status_text
             self.app.status_bar_feature.word_count_label.configure(text=status_text)
         except Exception:
             pass

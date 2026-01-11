@@ -19,7 +19,8 @@ class PreviewTheme:
     # 基础样式
     background: str = "#ffffff"
     text_color: str = "#1f2937"
-    font_family: str = "Microsoft YaHei"
+    # 增加多字体回退，避免因缺少特定字体导致奇怪字符
+    font_family: str = "Segoe UI','Microsoft YaHei','PingFang SC','Arial"
     font_size: int = 14
     line_height: float = 1.6
     
@@ -102,9 +103,13 @@ class PreviewTheme:
             font-family: '{self.font_family}', sans-serif;
             font-size: {self.font_size}px;
             line-height: {self.line_height};
-            padding: 20px 40px;
+            padding: 28px 48px;
             max-width: 900px;
             margin: 0 auto;
+        }}
+
+        p {{
+            margin: 0 0 12px;
         }}
         
         h1 {{
@@ -113,8 +118,8 @@ class PreviewTheme:
             font-weight: {self.h1_weight};
             border-bottom: {self.h1_border_bottom};
             padding-bottom: 10px;
-            margin-top: 24px;
-            margin-bottom: 16px;
+            margin-top: 32px;
+            margin-bottom: 18px;
         }}
         
         h2 {{
@@ -122,25 +127,25 @@ class PreviewTheme:
             font-size: {self.h2_size}px;
             font-weight: {self.h2_weight};
             border-bottom: {self.h2_border_bottom};
-            padding-bottom: 8px;
-            margin-top: 24px;
-            margin-bottom: 16px;
+            padding-bottom: 6px;
+            margin-top: 28px;
+            margin-bottom: 14px;
         }}
         
         h3 {{
             color: {self.h3_color};
             font-size: {self.h3_size}px;
             font-weight: {self.h3_weight};
-            margin-top: 24px;
-            margin-bottom: 16px;
+            margin-top: 20px;
+            margin-bottom: 10px;
         }}
         
         h4 {{
             color: {self.h4_color};
             font-size: {self.h4_size}px;
             font-weight: {self.h4_weight};
-            margin-top: 24px;
-            margin-bottom: 16px;
+            margin-top: 16px;
+            margin-bottom: 8px;
         }}
         
         h5 {{
@@ -173,17 +178,19 @@ class PreviewTheme:
             background-color: {self.code_bg};
             color: {self.code_color};
             font-family: '{self.code_font}', monospace;
-            font-size: {self.code_size}px;
+            font-size: {self.code_size + 1}px;
             padding: 2px 6px;
             border-radius: {self.code_border_radius};
+            line-height: 1.5;
         }}
         
         pre {{
             background-color: {self.code_block_bg};
             color: {self.code_block_color};
             border-radius: {self.code_block_border_radius};
-            padding: {self.code_block_padding};
+            padding: 18px;
             overflow-x: auto;
+            line-height: 1.5;
         }}
         
         pre code {{
@@ -228,10 +235,11 @@ class PreviewTheme:
         
         ul, ol {{
             padding-left: {self.list_indent};
+            margin: 0 0 12px;
         }}
         
         li {{
-            margin: 8px 0;
+            margin: 6px 0;
         }}
         
         li::marker {{
@@ -249,6 +257,16 @@ class PreviewTheme:
             max-width: 100%;
             border-radius: {self.image_border_radius};
             box-shadow: {self.image_shadow};
+        }}
+
+        a {{
+            color: {self.link_color};
+            text-decoration: none;
+        }}
+
+        a:hover {{
+            color: {self.link_hover_color};
+            text-decoration: underline;
         }}
         
         /* 任务列表 */

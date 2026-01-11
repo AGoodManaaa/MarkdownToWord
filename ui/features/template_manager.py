@@ -5,17 +5,19 @@
 
 import os
 import shutil
+from typing import List, Optional
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from ui.theme import COLORS, load_config, save_config
 
 
 class TemplateManager:
-    """Word模板管理器"""
+    """Word模板管理器（集中管理模板列表/选择/导入）"""
     
-    def __init__(self, app):
+    def __init__(self, app, config: Optional[dict] = None):
         self.app = app
-        self.config = load_config()
+        # 与应用共享配置，避免多处读写不一致
+        self.config = config if isinstance(config, dict) else load_config()
         self.templates_dir = self._get_templates_dir()
         self.current_template = self.config.get('word_template', None)
         
@@ -26,6 +28,46 @@ class TemplateManager:
         os.makedirs(templates_dir, exist_ok=True)
         return templates_dir
         
+    def list_templates(self) -> List[str]:
+        """返回模板名称列表（含默认）"""
+        items = ["默认样式"]
+        if os.path.exists(self.templates_dir):
+            for f in sorted(os.listdir(self.templates_dir)):
+                if f.lower().endswith(('.dotx', '.docx')):
+                    items.append(f)
+        return items
+
+    def resolve_path(self, template_name: Optional[str]) -> Optional[str]:
+        """根据名称返回绝对路径；默认或无效则 None"""
+        if not template_name or template_name == "默认样式":
+            return None
+        path = os.path.join(self.templates_dir, template_name)
+        return path if os.path.exists(path) else None
+
+    def select_template(self, template_name: Optional[str]) -> None:
+        """选择模板并写入配置"""
+        self.current_template = template_name or None
+        self.config['word_template'] = self.current_template
+        save_config(self.config)
+
+    def quick_import(self) -> Optional[str]:
+        """弹出文件选择并导入模板，返回文件名或 None"""
+        file_path = filedialog.askopenfilename(
+            title="选择Word模板文件",
+            filetypes=[("Word模板", "*.dotx;*.docx"), ("所有文件", "*.*")]
+        )
+        if not file_path:
+            return None
+
+        filename = os.path.basename(file_path)
+        dest_path = os.path.join(self.templates_dir, filename)
+        if os.path.exists(dest_path):
+            result = messagebox.askyesno("确认", f"{filename} 已存在，是否覆盖？")
+            if not result:
+                return None
+        shutil.copy2(file_path, dest_path)
+        return filename
+
     def show_template_manager_dialog(self):
         """显示模板管理对话框"""
         dialog = ctk.CTkToplevel(self.app)
@@ -135,26 +177,32 @@ class TemplateManager:
         for widget in container.winfo_children():
             widget.destroy()
             
+        # 统一使用一个 StringVar 以保证互斥
+        if not hasattr(self, "_template_var"):
+            self._template_var = ctk.StringVar(value=self.current_template or "")
+        else:
+            self._template_var.set(self.current_template or "")
+
         # 默认样式选项
         default_rb = ctk.CTkRadioButton(
             container,
             text="默认样式（内置）",
-            variable=ctk.StringVar(value=self.current_template or ""),
+            variable=self._template_var,
             value="",
             command=lambda: self._select_template("", dialog)
         )
         default_rb.pack(anchor="w", pady=5)
-        
-        # 扫描模板文件
+
+        # 扫描模板文件（dotx/docx）
         if os.path.exists(self.templates_dir):
-            templates = [f for f in os.listdir(self.templates_dir) if f.endswith('.dotx')]
+            templates = [f for f in os.listdir(self.templates_dir) if f.lower().endswith(('.dotx', '.docx'))]
             
             if templates:
                 for template in templates:
                     rb = ctk.CTkRadioButton(
                         container,
                         text=template,
-                        variable=ctk.StringVar(value=self.current_template or ""),
+                        variable=self._template_var,
                         value=template,
                         command=lambda t=template: self._select_template(t, dialog)
                     )

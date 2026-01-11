@@ -116,20 +116,25 @@ def show_export_options_for_app(app, content: str) -> None:
         font=ctk.CTkFont(size=16),
     ).pack(anchor="w")
 
-    templates = ["默认 (空白)"]
-    if hasattr(app, 'template_selector'):
-        templates = app.template_selector.get_templates()
+    templates = ["默认样式"]
+    if hasattr(app, 'template_manager'):
+        templates = app.template_manager.list_templates()
+        # 读取当前配置的模板名作为默认选项
+        current_tpl = (app.template_manager.current_template or "默认样式")
+    else:
+        current_tpl = "默认样式"
 
-    selected_template = ctk.StringVar(value="默认 (空白)")
+    selected_template = ctk.StringVar(value=current_tpl if current_tpl in templates else "默认样式")
     template_combo = ctk.CTkComboBox(template_frame, values=templates, variable=selected_template, width=280)
     template_combo.pack(pady=5, padx=10, anchor="w", side="left")
 
     def import_template_cmd():
-        if hasattr(app, 'template_selector'):
-            if app.template_selector.import_template():
-                new_templates = app.template_selector.get_templates()
+        if hasattr(app, 'template_manager'):
+            filename = app.template_manager.quick_import()
+            if filename:
+                new_templates = app.template_manager.list_templates()
                 template_combo.configure(values=new_templates)
-                template_combo.set(new_templates[-1])
+                template_combo.set(filename)
 
     ctk.CTkButton(template_frame, text="导入", width=60, command=import_template_cmd).pack(pady=5, padx=5, anchor="w", side="left")
 
@@ -242,8 +247,12 @@ def show_export_options_for_app(app, content: str) -> None:
             
         template_name = selected_template.get()
         template_path = None
-        if hasattr(app, 'template_selector'):
-            template_path = app.template_selector.get_template_path(template_name)
+        if hasattr(app, 'template_manager'):
+            try:
+                app.template_manager.select_template(template_name if template_name != "默认样式" else None)
+            except Exception:
+                pass
+            template_path = app.template_manager.resolve_path(template_name)
             
         do_export_for_app(app, content, style_var.get(), page_var.get(), template_path)
 

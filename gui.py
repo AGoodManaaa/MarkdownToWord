@@ -39,6 +39,7 @@ from ui.features import (
     TOCGeneratorFeature,
     WatermarkFeature,
     ThemeEditorFeature,
+    TemplateManager,
     TemplateSelectorFeature,
     HeaderFooterFeature,
     # Phase 3 新增功能
@@ -109,12 +110,18 @@ class App(ctk.CTk):
             import os
             icon_path = os.path.join(os.path.dirname(__file__), 'app.ico')
             if os.path.exists(icon_path):
-                self.iconbitmap(icon_path)
+                try:
+                    apply_window_icon(self)
+                except Exception:
+                    pass  # 图标加载失败不影响程序运行
         except Exception:
             pass  # 图标加载失败不影响程序运行
         
         # 加载配置
         self.config = load_config()
+
+        # 模板管理器（共享配置，供导出与管理对话使用）
+        self.template_manager = TemplateManager(self, self.config)
 
         self.file_ops = FileOpsFeature(self)
         self.theme_feature = ThemeFeature(self)
@@ -649,16 +656,27 @@ class App(ctk.CTk):
         self.main_frame = ctk.CTkFrame(self.right_container, fg_color="transparent")
         self.main_frame.pack(fill="both", expand=True)
         
-        # 配置列权重：左侧输入略宽，右侧预览略窄
-        self.main_frame.grid_columnconfigure(0, weight=3)
-        self.main_frame.grid_columnconfigure(1, weight=2)
-        self.main_frame.grid_rowconfigure(0, weight=1)
+        # 使用 tk.PanedWindow 实现可拖动分栏
+        self.paned_window = tk.PanedWindow(
+            self.main_frame, 
+            orient=tk.HORIZONTAL, 
+            bg=COLORS['bg_light'], 
+            bd=0, 
+            sashwidth=4,
+            sashrelief='flat'
+        )
+        self.paned_window.pack(fill="both", expand=True)
         
         # ===== 左侧：输入区域 =====
-        self._create_input_panel(self.main_frame)
+        self._create_input_panel(self.paned_window)
+        self.paned_window.add(self.input_card, stretch="always")
         
         # ===== 右侧：预览区域 =====
-        self._create_preview_panel(self.main_frame)
+        self._create_preview_panel(self.paned_window)
+        self.paned_window.add(self.preview_card, stretch="always")
+        
+        # 初始权重设置
+        self.after(100, lambda: self.paned_window.sash_place(0, 600, 0))
         
         # 插入示例文本（在所有组件创建完成后）
         self._insert_example()
@@ -694,7 +712,7 @@ class App(ctk.CTk):
     def _create_input_panel(self, parent):
         """创建输入面板 - 带行号"""
         self.input_card = ModernCard(parent)
-        self.input_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        # self.input_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8)) # PanedWindow.add handles this
         
         # 工具栏 - 紧凑布局，紧贴文本框
         toolbar = ctk.CTkFrame(self.input_card, fg_color="transparent", height=26)
@@ -772,15 +790,31 @@ class App(ctk.CTk):
         """创建预览面板 - 支持开关"""
         self.preview_visible = True
         self.preview_card = ModernCard(parent, title="👁️ 实时预览")
-        self.preview_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        # self.preview_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0)) # PanedWindow.add handles this
         
         # 顶部控件栏
         top_frame = ctk.CTkFrame(self.preview_card, fg_color="transparent", height=30)
         top_frame.pack(fill="x", padx=10, pady=(4, 0))
         
-        # 左侧：预览主题选择
+        # 左侧：预览主题选择 + 仿真页面开关
         theme_frame = ctk.CTkFrame(top_frame, fg_color="transparent")
         theme_frame.pack(side="left")
+        
+        self.page_view_btn = ctk.CTkButton(
+            theme_frame,
+            text="📄 页面模式",
+            width=80,
+            height=24,
+            corner_radius=6,
+            fg_color=COLORS['bg_card'],
+            text_color=COLORS['text_primary'],
+            hover_color=COLORS['highlight'],
+            border_width=1,
+            border_color=COLORS['border'],
+            font=ctk.CTkFont(size=10, weight="bold"),
+            command=self.toggle_page_view
+        )
+        self.page_view_btn.pack(side="left", padx=(0, 8))
         
         theme_label = ctk.CTkLabel(
             theme_frame,
@@ -905,6 +939,16 @@ class App(ctk.CTk):
             width=36
         )
         self.clear_btn.pack(side="right", padx=(0, 8))
+        
+        # 手动刷新按钮
+        self.refresh_preview_btn = ModernButton(
+            right_group,
+            text="🔄 刷新",
+            command=self.refresh_preview,
+            style="ghost",
+            width=80
+        )
+        self.refresh_preview_btn.pack(side="right", padx=(0, 6))
     
     def _create_status_bar(self):
         """创建状态栏"""
@@ -1122,7 +1166,7 @@ class App(ctk.CTk):
         return None
 
     def _update_cursor_position(self):
-        """更新状态栏的光标行/列"""
+        """更新状态栏的光标行/列及选中统计"""
         try:
             tb = getattr(self.input_text, '_textbox', None)
             if tb is None:
@@ -1130,7 +1174,21 @@ class App(ctk.CTk):
             if tb is None:
                 return
 
+            # 更新行列信息
             self.status_bar_feature.update_cursor_position(tb)
+            
+            # 更新选中统计
+            try:
+                selected_text = tb.get(tk.SEL_FIRST, tk.SEL_LAST)
+                selected_count = len(selected_text.replace('\n', '').replace(' ', '').replace('\t', ''))
+            except tk.TclError:
+                selected_count = 0
+                
+            content = tb.get("1.0", "end-1c")
+            if hasattr(self, 'statistics_detail'):
+                self.statistics_detail.update_status_bar(content, selected_count)
+            else:
+                self.status_bar_feature.update_counts(content, selected_count)
         except Exception:
             pass
     
@@ -1142,27 +1200,80 @@ class App(ctk.CTk):
         
         if self.preview_visible:
             # 显示预览
-            self.preview_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+            self.paned_window.add(self.preview_card)
             try:
                 if hasattr(self, 'hide_preview_btn') and self.hide_preview_btn is not None:
                     self.hide_preview_btn.configure(text="✕ 关闭预览")
             except Exception:
                 pass
-            # 调整列权重
-            self.main_frame.grid_columnconfigure(0, weight=3)
-            self.main_frame.grid_columnconfigure(1, weight=2)
             # 更新预览
             self.on_text_change(None)
             self.update_status("👁️ 预览已开启")
         else:
             # 隐藏预览
-            self.preview_card.grid_forget()
-            # 调整输入区域占满
-            self.main_frame.grid_columnconfigure(0, weight=1)
-            self.main_frame.grid_columnconfigure(1, weight=0)
-            self.update_status("📝 纯编辑模式 - 按 Ctrl+P 或点击工具栏打开预览")
+            self.paned_window.forget(self.preview_card)
+            self.update_status("� 纯编辑模式 - 按 Ctrl+P 或点击工具栏打开预览")
 
         self.header_styler.update_states()
+    
+    def toggle_page_view(self):
+        """切换预览区的仿真页面模式"""
+        if hasattr(self, 'preview'):
+            enabled = not getattr(self.preview, '_page_view_enabled', False)
+            self.preview.set_page_view(enabled)
+            
+            # 更新按钮样式
+            if enabled:
+                self.page_view_btn.configure(fg_color=COLORS['primary'], text_color="white")
+                self.update_status("� 已开启仿真页面模式")
+            else:
+                self.page_view_btn.configure(fg_color=COLORS['bg_card'], text_color=COLORS['text_primary'])
+                self.update_status("📄 已恢复流式预览模式")
+    
+    def refresh_preview(self):
+        """手动刷新预览内容"""
+        try:
+            if hasattr(self, 'input_text') and hasattr(self, 'preview'):
+                content = self.input_text.get("1.0", "end-1c")
+                self._set_preview_status("渲染中...", None)
+                self.preview.set_updating(True)
+                self.preview.update_preview(content)
+                self.preview.set_updating(False)
+                self._set_preview_status("预览就绪", None)
+                self.update_status("🔄 预览已刷新")
+        except Exception:
+            self._set_preview_status("预览失败", None)
+    
+    def _toggle_scroll_sync(self):
+        """切换滚动同步开关"""
+        try:
+            enabled = self.preview_sync.toggle_scroll_sync()
+        except Exception:
+            enabled = getattr(self.preview_sync, '_scroll_sync_enabled', True)
+        self._update_scroll_sync_btn()
+        try:
+            self.update_status("🔗 滚动同步已开启" if enabled else "📴 滚动同步已关闭")
+        except Exception:
+            pass
+    
+    def _update_scroll_sync_btn(self):
+        """根据状态更新同步按钮文案"""
+        try:
+            enabled = getattr(self.preview_sync, '_scroll_sync_enabled', True)
+            self.scroll_sync_btn.configure(text="同步开" if enabled else "同步关")
+        except Exception:
+            pass
+    
+    def _set_preview_status(self, text: str, color=None):
+        """更新预览状态标签"""
+        try:
+            if hasattr(self, 'preview_status_label'):
+                kwargs = {"text": text}
+                if color is not None:
+                    kwargs["text_color"] = color
+                self.preview_status_label.configure(**kwargs)
+        except Exception:
+            pass
     
     def toggle_sidebar(self):
         """切换侧边栏显示/隐藏"""

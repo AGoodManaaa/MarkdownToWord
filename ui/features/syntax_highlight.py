@@ -3,6 +3,7 @@
 
 import re
 import tkinter as tk
+import tkinter.font as tkfont
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 
@@ -40,8 +41,11 @@ DEFAULT_THEME = HighlightTheme()
 
 # Markdown 语法正则表达式
 PATTERNS = {
-    # 标题 (# ## ### 等)
-    'heading': r'^(#{1,6})\s+(.+)$',
+    # 标题 (# ## ### 等) - 允许前置空格，并兼容：
+    # 1) ### 标题（有空格）
+    # 2) ###标题（无空格）
+    # 3) 全角/不间断空格
+    'heading': r'^[\s\u00a0\u3000]*(#{1,6})[\s\u00a0\u3000]*(.+?)\s*$',
     # 粗体 **text** 或 __text__
     'bold': r'(\*\*|__)(.+?)\1',
     # 斜体 *text* 或 _text_
@@ -50,10 +54,9 @@ PATTERNS = {
     'bold_italic': r'(\*\*\*|___)(.+?)\1',
     # 行内代码 `code`
     'code_inline': r'`([^`\n]+)`',
-    # 代码块开始 ```
-    'code_block_start': r'^```(\w*)$',
-    # 代码块结束 ```
-    'code_block_end': r'^```$',
+    # 代码块开始/结束 ```（允许前后空白、语言标识）
+    'code_block_start': r'^\s*```\s*\w*\s*$',
+    'code_block_end': r'^\s*```\s*$',
     # 链接 [text](url)
     'link': r'\[([^\]]+)\]\(([^)]+)\)',
     # 图片 ![alt](url)
@@ -120,11 +123,22 @@ class SyntaxHighlighter:
         
         # 绑定滚动事件以支持虚拟化
         self._bind_scroll_events()
+
+        # 初始全量高亮，避免部分行未刷新
+        try:
+            self.highlight_all()
+        except Exception:
+            pass
     
     def _configure_tags(self):
         """配置文本标签样式"""
         t = self._text
         theme = self.theme
+        # 读取当前编辑器基础字体，确保粗体/斜体字号与正文一致
+        base_font = tkfont.Font(font=t.cget('font'))
+        base_family = base_font.actual('family')
+        base_size = base_font.actual('size') or 16
+        code_size = max(12, int(base_size) - 1)
         
         # 标题样式
         for i in range(1, 7):
@@ -134,24 +148,24 @@ class SyntaxHighlighter:
             t.tag_configure(f'heading{i}_marker', foreground=theme.heading_marker)
         
         # 粗体
-        t.tag_configure('bold', font=('Microsoft YaHei', 11, 'bold'))
+        t.tag_configure('bold', font=(base_family, base_size, 'bold'))
         t.tag_configure('bold_marker', foreground=theme.heading_marker)
         
         # 斜体
-        t.tag_configure('italic', font=('Microsoft YaHei', 11, 'italic'),
+        t.tag_configure('italic', font=(base_family, base_size, 'italic'),
                        foreground=theme.italic)
         t.tag_configure('italic_marker', foreground=theme.heading_marker)
         
         # 粗斜体
-        t.tag_configure('bold_italic', font=('Microsoft YaHei', 11, 'bold italic'))
+        t.tag_configure('bold_italic', font=(base_family, base_size, 'bold italic'))
         
         # 行内代码
         t.tag_configure('code_inline', foreground=theme.code_inline,
-                       background=theme.code_bg, font=('Consolas', 10))
+                       background=theme.code_bg, font=('Consolas', code_size))
         
         # 代码块
         t.tag_configure('code_block', foreground=theme.code_block,
-                       background=theme.code_bg, font=('Consolas', 10))
+                       background=theme.code_bg, font=('Consolas', code_size))
         t.tag_configure('code_block_marker', foreground=theme.heading_marker,
                        background=theme.code_bg)
         
@@ -166,7 +180,7 @@ class SyntaxHighlighter:
         
         # 列表
         t.tag_configure('list_marker', foreground=theme.list_marker,
-                       font=('Microsoft YaHei', 11, 'bold'))
+                       font=(base_family, base_size, 'bold'))
         
         # 引用
         t.tag_configure('blockquote', foreground=theme.blockquote,
@@ -187,7 +201,7 @@ class SyntaxHighlighter:
         
         # 数学公式
         t.tag_configure('math', foreground=theme.math,
-                       font=('Cambria Math', 11))
+                       font=('Cambria Math', base_size))
         
         # 任务列表
         t.tag_configure('task_done', overstrike=True,
@@ -198,6 +212,15 @@ class SyntaxHighlighter:
         """绑定文本变化事件"""
         self._text.bind('<KeyRelease>', self._on_key_release)
         self._text.bind('<<Modified>>', self._on_modified)
+    
+    def _bind_scroll_events(self):
+        """绑定滚动事件以刷新可见区域高亮"""
+        try:
+            self._text.bind('<MouseWheel>', self._on_scroll, add='+')
+            self._text.bind('<Button-4>', self._on_scroll, add='+')  # Linux up
+            self._text.bind('<Button-5>', self._on_scroll, add='+')  # Linux down
+        except Exception:
+            pass
     
     def _on_key_release(self, event=None):
         """按键释放事件"""
@@ -246,10 +269,12 @@ class SyntaxHighlighter:
     
     def _highlight_range(self, start: str, end: str):
         """高亮指定范围"""
-        # 清除现有标签
+        # 清除现有标签（保持 sel）
         for tag in self._text.tag_names():
             if tag != 'sel':
                 self._text.tag_remove(tag, start, end)
+        # 额外确保 code_block 不延续到新渲染范围外
+        self._in_code_block = False
         
         # 获取文本内容
         content = self._text.get(start, end)
@@ -260,20 +285,27 @@ class SyntaxHighlighter:
         
         # 逐行处理
         self._in_code_block = False
-        
+
         for i, line in enumerate(lines):
             line_num = start_line + i
             line_start = f"{line_num}.0"
             line_end = f"{line_num}.end"
             
-            # 检查代码块状态
-            if re.match(PATTERNS['code_block_start'], line):
+            stripped = line.strip()
+            is_fence = stripped.startswith("```")
+            # 检查代码块状态（允许行首/行内有空白，strip 后以 ``` 开头视为开始/结束）
+            if re.match(PATTERNS['code_block_start'], line) or is_fence:
+                # 如果已在代码块内且再次遇到围栏，先收尾再继续，防止漏关
+                if self._in_code_block:
+                    self._text.tag_add('code_block_marker', line_start, line_end)
+                    self._in_code_block = False
+                    continue
                 self._in_code_block = True
                 self._code_block_start_line = line_num
                 self._text.tag_add('code_block_marker', line_start, line_end)
                 continue
             
-            if re.match(PATTERNS['code_block_end'], line) and self._in_code_block:
+            if self._in_code_block and (re.match(PATTERNS['code_block_end'], line) or is_fence):
                 self._in_code_block = False
                 self._text.tag_add('code_block_marker', line_start, line_end)
                 continue
@@ -289,14 +321,32 @@ class SyntaxHighlighter:
         """高亮单行"""
         line_start = f"{line_num}.0"
         
-        # 标题
-        match = re.match(PATTERNS['heading'], line)
-        if match:
-            level = len(match.group(1))
-            marker_end = f"{line_num}.{len(match.group(1))}"
-            self._text.tag_add(f'heading{level}_marker', line_start, marker_end)
-            self._text.tag_add(f'heading{level}', marker_end, f"{line_num}.end")
-            return
+        # 标题：改用“前导空白 + 连续# + 文本”判定，兼容无空格/全角空格/不间断空格
+        stripped = line.lstrip(" \t\u00a0\u3000")
+        if stripped.startswith('#'):
+            level = 0
+            for ch in stripped:
+                if ch == '#':
+                    level += 1
+                else:
+                    break
+            level = min(max(level, 1), 6)
+            # 计算原行中的起止列
+            marker_start_col = len(line) - len(stripped)
+            marker_end_col = marker_start_col + level
+            # 文本起点：跳过可选空白
+            text_start_col = marker_end_col
+            while text_start_col < len(line) and line[text_start_col] in (" ", "\t", "\u00a0", "\u3000"):
+                text_start_col += 1
+            text_end_col = len(line.rstrip('\n'))
+            if text_start_col < text_end_col:
+                self._text.tag_add(f'heading{level}_marker',
+                                   f"{line_num}.{marker_start_col}",
+                                   f"{line_num}.{marker_end_col}")
+                self._text.tag_add(f'heading{level}',
+                                   f"{line_num}.{text_start_col}",
+                                   f"{line_num}.{text_end_col}")
+                return
         
         # 分隔线
         if re.match(PATTERNS['hr'], line):

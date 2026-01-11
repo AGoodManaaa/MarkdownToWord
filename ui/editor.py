@@ -8,7 +8,7 @@ from ui.theme import COLORS
 
 class LineNumberedText(ctk.CTkFrame):
     """带行号的文本编辑器 - 精确对齐版"""
-    def __init__(self, master, font_size=14, on_scroll=None, **kwargs):
+    def __init__(self, master, font_size=16, on_scroll=None, **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
         
         self.font_size = font_size
@@ -31,7 +31,7 @@ class LineNumberedText(ctk.CTkFrame):
             foreground=COLORS['line_number'],
             state='disabled',
             wrap='none',
-            font=('Consolas', font_size),
+            font=('Microsoft YaHei', font_size),
             cursor='arrow',
         )
         self.line_numbers.pack(side='left', fill='y')
@@ -42,7 +42,7 @@ class LineNumberedText(ctk.CTkFrame):
         
         self._textbox = tk.Text(
             self.text_frame,
-            font=('Consolas', font_size),
+            font=('Microsoft YaHei', font_size),
             bg=COLORS['bg_light'],
             fg=COLORS['text_primary'],
             wrap='word',
@@ -60,14 +60,20 @@ class LineNumberedText(ctk.CTkFrame):
         # 兼容旧属性名
         self.text = self._textbox
         
-        # 滚动条
-        self.scrollbar = tk.Scrollbar(self.text_frame, command=self._on_scrollbar)
+        # 滚动条 - 使用 CTkScrollbar 保持风格一致
+        self.scrollbar = ctk.CTkScrollbar(self.text_frame, command=self._on_scrollbar)
         self.scrollbar.pack(side='right', fill='y')
         self._textbox.pack(side='left', fill='both', expand=True)
         self._textbox.config(yscrollcommand=self._on_text_scroll)
         
+        # 配置当前行高亮标签
+        self._textbox.tag_configure("current_line", background=COLORS.get('highlight', '#f0f0f0'))
+        # 缩进参考线（使用前导空格着色实现）
+        self._textbox.tag_configure("indent_guide", foreground=COLORS.get('border', '#d1d5db'))
+        
         # 绑定事件
         self._textbox.bind('<KeyRelease>', self._on_change)
+        self._textbox.bind('<ButtonRelease-1>', self._on_change) # 点击时也更新
         self._textbox.bind('<MouseWheel>', self._on_mousewheel)
         self._textbox.bind('<Configure>', self._on_change)
         self.line_numbers.bind('<MouseWheel>', self._on_mousewheel)
@@ -99,8 +105,10 @@ class LineNumberedText(ctk.CTkFrame):
         return "break"
     
     def _on_change(self, event=None):
-        """内容变化时更新行号"""
+        """内容变化时更新行号和当前行高亮"""
         self.after(5, self._update_line_numbers)
+        self.after(5, self._highlight_current_line)
+        self.after(5, self._update_indent_guides)
 
         # 让撤销更“一级一级”：对连续输入做轻量防抖后插入 undo 分隔点
         try:
@@ -112,6 +120,33 @@ class LineNumberedText(ctk.CTkFrame):
             self._undo_sep_timer = self.after(180, self._insert_undo_separator)
         except Exception:
             self._undo_sep_timer = None
+
+    def _highlight_current_line(self):
+        """高亮当前行"""
+        try:
+            self._textbox.tag_remove("current_line", "1.0", "end")
+            self._textbox.tag_add("current_line", "insert linestart", "insert lineend+1c")
+        except Exception:
+            pass
+
+    def _update_indent_guides(self):
+        """为缩进层级着色，形成参考线效果"""
+        try:
+            self._textbox.tag_remove("indent_guide", "1.0", "end")
+            content = self._textbox.get("1.0", "end-1c").split("\n")
+            for line_idx, line in enumerate(content, start=1):
+                if not line:
+                    continue
+                leading = len(line) - len(line.lstrip(" "))
+                if leading <= 1:
+                    continue
+                # 每4空格为一级，引导线给前导空格着色
+                for pos in range(0, leading, 4):
+                    start = f"{line_idx}.{pos}"
+                    end = f"{line_idx}.{min(pos + 4, leading)}"
+                    self._textbox.tag_add("indent_guide", start, end)
+        except Exception:
+            pass
 
     def _insert_undo_separator(self):
         self._undo_sep_timer = None
@@ -158,6 +193,6 @@ class LineNumberedText(ctk.CTkFrame):
     def set_font_size(self, size):
         """设置字体大小"""
         self.font_size = size
-        self._textbox.configure(font=('Consolas', size))
-        self.line_numbers.configure(font=('Consolas', size))
+        self._textbox.configure(font=('Microsoft YaHei', size))
+        self.line_numbers.configure(font=('Microsoft YaHei', size))
         self._update_line_numbers()

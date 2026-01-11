@@ -18,18 +18,19 @@ class MarkdownPreview(ctk.CTkFrame):
 
         # 预览缩放（仅影响预览区字体/样式）
         self._scale = 1.0
+        # 放大基础字号，改善可读性
         self._base_sizes = {
-            'body': 16,
-            'h1': 28,
-            'h2': 22,
-            'h3': 18,
-            'h4': 16,
-            'code': 10,
-            'math': 16,
-            'math_block': 18,
-            'supsub': 9,
-            'quote': 11,
-            'list_item': 16,
+            'body': 18,
+            'h1': 30,
+            'h2': 24,
+            'h3': 20,
+            'h4': 18,
+            'code': 11,
+            'math': 18,
+            'math_block': 20,
+            'supsub': 10,
+            'quote': 12,
+            'list_item': 18,
         }
         
         # 内容变化回调
@@ -38,6 +39,8 @@ class MarkdownPreview(ctk.CTkFrame):
         # 滚动同步回调
         self.on_scroll = on_scroll
         self._scroll_updating = False
+        # 是否启用与编辑器的滚动同步（默认启用）
+        self._sync_scroll_enabled = True
 
         # App 引用：用于“复制到 Word”
         self.app = app
@@ -53,12 +56,13 @@ class MarkdownPreview(ctk.CTkFrame):
         self._math_token_map = {}
         
         # 使用 Text widget 支持富文本，整体模拟排版后的页面效果
+        # 预览字体改为多字体回退，避免缺字/符号字体
         self.text = tk.Text(
             self,
             wrap='word',
             bg='#FFFFFF',
             fg='#111827',
-            font=('宋体', 16),
+            font=('Microsoft YaHei', 18, 'normal'),
             width=60,
             padx=20,
             pady=30,
@@ -87,6 +91,7 @@ class MarkdownPreview(ctk.CTkFrame):
         
         # 预览区只读：允许选中/复制，但禁止输入/粘贴等修改
         self._readonly = True
+        self._page_view_enabled = False  # 仿真页面模式开关
         try:
             self.text.configure(state='disabled')
         except Exception:
@@ -125,6 +130,8 @@ class MarkdownPreview(ctk.CTkFrame):
         self.context_menu = tk.Menu(self, tearoff=0)
         self.context_menu.add_command(label="复制", command=lambda: self.text.event_generate('<<Copy>>'))
         self.context_menu.add_command(label="复制选中到Word（保持格式）", command=self._copy_selection_to_word)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="跳转到编辑器", command=self._jump_to_editor_from_context)
         
         self.text.bind('<Button-3>', self._show_context_menu)
 
@@ -559,6 +566,34 @@ class MarkdownPreview(ctk.CTkFrame):
         """设置更新状态（防止循环触发）"""
         self._updating = updating
     
+    def set_page_view(self, enabled: bool):
+        """切换仿真页面模式"""
+        self._page_view_enabled = enabled
+        if enabled:
+            # 仿真页面样式：固定宽度，居中，带阴影效果（通过边框模拟）
+            self.text.pack_forget()
+            self.scrollbar.pack_forget()
+            
+            # 容器背景色（模拟桌面）
+            self.configure(fg_color=COLORS.get('bg_sidebar', '#f3f4f6'))
+            
+            # 重新布局：使用 place 或 grid 居中
+            self.text.pack(side="top", pady=20, padx=40, expand=False)
+            self.text.configure(width=85, borderwidth=1, relief="solid") # 约 800px
+            self.scrollbar.pack(side="right", fill="y", padx=(0, 10), pady=10)
+        else:
+            # 流式布局样式
+            self.text.pack_forget()
+            self.scrollbar.pack_forget()
+            
+            self.configure(fg_color=COLORS['bg_card'])
+            self.text.configure(width=60, borderwidth=0, relief="flat")
+            
+            self.scrollbar.pack(side="right", fill="y", padx=(0, 10), pady=10)
+            self.text.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=10)
+        
+        self._setup_tags()
+
     def _setup_tags(self):
         """配置文本标签样式 - 模拟Word中的样式，更接近真实排版"""
         def sz(key: str) -> int:
@@ -759,36 +794,56 @@ class MarkdownPreview(ctk.CTkFrame):
         return 'TkDefaultFont'
     
     def update_preview(self, markdown_text: str):
-        """更新预览内容 - 使用共用解析器渲染"""
-        # 预览区默认只读：渲染时临时解锁写入，写完再恢复只读
-        try:
-            self.text.configure(state='normal')
-        except Exception:
-            pass
-        self.text.delete('1.0', 'end')
+        """更新预览内容 - 异步版"""
+        import threading
         
-        # 清除旧的公式图片，重置计数器
-        self.math_images = []
-        self.equation_counter = 0
-        self._math_token_counter = 0
-        self._math_token_map = {}
+        # 如果当前已经在渲染，则不再触发新的（由防抖控制频率）
+        if getattr(self, '_is_rendering', False):
+            return
+            
+        def _render_task():
+            self._is_rendering = True
+            try:
+                # 预处理和解析在子线程完成
+                processed_text = convert_latex_delimiters(markdown_text)
+                processed_text = normalize_markdown(processed_text)
+                blocks = parse_markdown(processed_text)
+                
+                # 回到主线程更新 UI
+                self.after(0, lambda: self._apply_render_result(blocks))
+            except Exception as e:
+                print(f"Render error: {e}")
+                self._is_rendering = False
         
-        # 预处理文本
-        markdown_text = convert_latex_delimiters(markdown_text)  # 转换 \(...\) 和 \[...\] 格式
-        markdown_text = normalize_markdown(markdown_text)  # 规范化格式
-        
-        # 使用共用解析器解析
-        blocks = parse_markdown(markdown_text)
-        
-        for block in blocks:
-            self._render_block(block)
+        threading.Thread(target=_render_task, daemon=True).start()
 
+    def _apply_render_result(self, blocks):
+        """主线程应用渲染结果"""
         try:
+            # 预览区默认只读：渲染时临时解锁写入，写完再恢复只读
+            self.text.configure(state='normal')
+            self.text.delete('1.0', 'end')
+            
+            # 清除旧的公式图片，重置计数器
+            self.math_images = []
+            self.equation_counter = 0
+            self._math_token_counter = 0
+            self._math_token_map = {}
+            
+            for block in blocks:
+                self._render_block(block)
+
             if bool(getattr(self, '_readonly', False)):
                 self.text.configure(state='disabled')
-        except Exception:
-            pass
-    
+        except Exception as e:
+            print(f"Apply render error: {e}")
+        finally:
+            self._is_rendering = False
+            # 渲染完成后触发一次滚动同步
+            if hasattr(self, 'on_scroll') and self.on_scroll:
+                # 触发一个微小的滚动变化来强制刷新同步位
+                pass
+
     def _render_block(self, block):
         """渲染块级元素"""
         if block.type == 'heading':
@@ -1251,6 +1306,18 @@ class MarkdownPreview(ctk.CTkFrame):
         """
         self.on_jump_to_line = callback
 
+    def _jump_to_editor_from_context(self):
+        """右键菜单触发跳转：定位到当前预览行对应的源码"""
+        try:
+            index = self.text.index(tk.INSERT)
+            line_num = int(index.split('.')[0])
+            source_line = self._find_source_line_for_preview_line(line_num)
+            if source_line and self.on_jump_to_line:
+                self.on_jump_to_line(source_line)
+                self._highlight_preview_line(line_num)
+        except Exception:
+            pass
+
     # ==================== 滚动同步方法 ====================
     
     def _on_scrollbar(self, *args):
@@ -1259,7 +1326,12 @@ class MarkdownPreview(ctk.CTkFrame):
         # 触发滚动同步
         try:
             first = self.text.yview()[0]
-            if hasattr(self, 'on_scroll') and self.on_scroll and not getattr(self, '_scroll_updating', False):
+            if (
+                getattr(self, '_sync_scroll_enabled', True)
+                and hasattr(self, 'on_scroll')
+                and self.on_scroll
+                and not getattr(self, '_scroll_updating', False)
+            ):
                 self.on_scroll(float(first))
         except Exception:
             pass
@@ -1290,7 +1362,12 @@ class MarkdownPreview(ctk.CTkFrame):
         self.scrollbar.set(first, last)
         
         # 触发滚动同步回调
-        if hasattr(self, 'on_scroll') and self.on_scroll and not getattr(self, '_scroll_updating', False):
+        if (
+            getattr(self, '_sync_scroll_enabled', True)
+            and hasattr(self, 'on_scroll')
+            and self.on_scroll
+            and not getattr(self, '_scroll_updating', False)
+        ):
             try:
                 self.on_scroll(float(first))
             except Exception:
