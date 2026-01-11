@@ -1,0 +1,13 @@
+dist/
+build/
+__pycache__/
+.pytest_cache/
+.hypothesis/
+.auto_dev_state/
+.kiro/
+*.exe
+*.dll
+*.pyd
+*.so
+*.dylib
+*.log
