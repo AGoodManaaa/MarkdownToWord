@@ -18,6 +18,31 @@ from ui.export_history import record_export_event
 from ui.theme import COLORS, apply_window_icon, attach_window_geometry
 
 
+EXPORT_STAGE_MESSAGES = {
+    'prepare': '准备导出环境',
+    'preflight': '检查文档与资源',
+    'save_path': '确认输出位置',
+    'convert': '生成 Word 内容',
+    'write': '写入 Word 文件',
+    'complete': '导出完成',
+}
+
+
+def _set_export_stage(app, stage: str, progress=None, detail: str = None) -> None:
+    label = EXPORT_STAGE_MESSAGES.get(stage, stage)
+    message = f"{label}..." if detail is None else f"{label} - {detail}"
+    try:
+        if hasattr(app, 'status_bar_feature') and app.status_bar_feature is not None:
+            app.status_bar_feature.update_progress(progress, message)
+        else:
+            app.update_status(message)
+    except Exception:
+        try:
+            app.update_status(message)
+        except Exception:
+            pass
+
+
 def export_to_word_for_app(app) -> None:
     """从 App 导出为 Word 文档的入口。
 
@@ -327,6 +352,7 @@ def show_export_options_for_app(app, content: str) -> None:
 
 
 def do_export_for_app(app, content: str, style: str, page_size: str, template_path: str = None) -> None:
+    _set_export_stage(app, 'prepare', 0.0)
     """执行导出逻辑。"""
     # 可选：导出前自动规范化 Markdown
     try:
@@ -345,6 +371,7 @@ def do_export_for_app(app, content: str, style: str, page_size: str, template_pa
 
     issues = []
     try:
+        _set_export_stage(app, 'preflight', 0.05)
         check_remote = False
         try:
             check_remote = bool((app.config or {}).get('preflight_check_remote_images', False))
@@ -433,6 +460,8 @@ def do_export_for_app(app, content: str, style: str, page_size: str, template_pa
     if not file_path:
         return
 
+    _set_export_stage(app, 'save_path', 0.1, os.path.basename(file_path))
+
     # 进入忙碌态：禁用按钮，避免重复触发
     try:
         if hasattr(app, 'busy') and app.busy is not None:
@@ -458,13 +487,7 @@ def do_export_for_app(app, content: str, style: str, page_size: str, template_pa
     except Exception:
         pass
 
-    try:
-        if hasattr(app, 'status_bar_feature') and app.status_bar_feature is not None:
-            app.status_bar_feature.update_progress(0.0, "⏳ 正在转换...")
-        else:
-            app.update_status("⏳ 正在转换...")
-    except Exception:
-        app.update_status("⏳ 正在转换...")
+    _set_export_stage(app, 'convert', 0.12)
     try:
         if hasattr(app, 'export_btn') and app.export_btn is not None:
             app.export_btn.configure(state="disabled")
@@ -504,12 +527,13 @@ def do_export_for_app(app, content: str, style: str, page_size: str, template_pa
             last_ui_ts = now
             last_pct = pct
 
-            msg = f"⏳ 正在转换... {pct}% ({done}/{total})  {block_type}  行{start_line}"
+            stage_progress = 0.12 + (p * 0.78)
+            msg = f"{EXPORT_STAGE_MESSAGES['convert']} {pct}% ({done}/{total})  {block_type}  行{start_line}"
 
             def _apply() -> None:
                 try:
                     if hasattr(app, 'status_bar_feature') and app.status_bar_feature is not None:
-                        app.status_bar_feature.update_progress(p, msg)
+                        app.status_bar_feature.update_progress(stage_progress, msg)
                     else:
                         app.update_status(msg)
                 except Exception:
@@ -575,6 +599,7 @@ def do_export_for_app(app, content: str, style: str, page_size: str, template_pa
             except Exception:
                 pass
 
+            _set_export_stage(app, 'write', 0.94, os.path.basename(file_path))
             converter.save(file_path)
 
             app.after(0, lambda fp=file_path: on_export_success_for_app(app, fp))
@@ -589,6 +614,7 @@ def do_export_for_app(app, content: str, style: str, page_size: str, template_pa
 
 
 def on_export_success_for_app(app, file_path: str) -> None:
+    _set_export_stage(app, 'complete', 1.0, os.path.basename(file_path))
     """导出成功回调。"""
     try:
         if hasattr(app, 'export_btn') and app.export_btn is not None:

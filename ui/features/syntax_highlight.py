@@ -139,12 +139,20 @@ class SyntaxHighlighter:
         base_family = base_font.actual('family')
         base_size = base_font.actual('size') or 16
         code_size = max(12, int(base_size) - 1)
+        heading_scale = {
+            1: 1.75,
+            2: 1.5,
+            3: 1.3,
+            4: 1.15,
+            5: 1.0,
+            6: 1.0,
+        }
         
         # 标题样式
         for i in range(1, 7):
-            size = 24 - (i - 1) * 2  # h1=24, h2=22, ..., h6=14
+            size = max(base_size, int(round(base_size * heading_scale.get(i, 1.0))))
             t.tag_configure(f'heading{i}', foreground=theme.heading,
-                           font=('Microsoft YaHei', size, 'bold'))
+                           font=(base_family, size, 'bold'))
             t.tag_configure(f'heading{i}_marker', foreground=theme.heading_marker)
         
         # 粗体
@@ -211,7 +219,7 @@ class SyntaxHighlighter:
     def _bind_events(self):
         """绑定文本变化事件"""
         self._text.bind('<KeyRelease>', self._on_key_release)
-        self._text.bind('<<Modified>>', self._on_modified)
+        # 移除 <<Modified>> 绑定，改由 gui.py 统一分发驱动，避免竞争
     
     def _bind_scroll_events(self):
         """绑定滚动事件以刷新可见区域高亮"""
@@ -237,10 +245,11 @@ class SyntaxHighlighter:
         )
     
     def _on_modified(self, event=None):
-        """文本修改事件"""
+        """文本修改事件 - 仅触发高亮，不重置 modified 标记，避免干扰主程序刷新"""
         if self._text.edit_modified():
-            self._text.edit_modified(False)
-            self._on_key_release()
+            # 仅在不是由于高亮导致的修改时触发
+            if not getattr(self, '_is_highlighting', False):
+                self._on_key_release()
     
     def _highlight_visible(self):
         """只高亮可见区域"""
@@ -269,53 +278,59 @@ class SyntaxHighlighter:
     
     def _highlight_range(self, start: str, end: str):
         """高亮指定范围"""
-        # 清除现有标签（保持 sel）
-        for tag in self._text.tag_names():
-            if tag != 'sel':
-                self._text.tag_remove(tag, start, end)
-        # 额外确保 code_block 不延续到新渲染范围外
-        self._in_code_block = False
+        if getattr(self, '_is_highlighting', False):
+            return
         
-        # 获取文本内容
-        content = self._text.get(start, end)
-        lines = content.split('\n')
-        
-        # 计算起始行号
-        start_line = int(start.split('.')[0])
-        
-        # 逐行处理
-        self._in_code_block = False
+        self._is_highlighting = True
+        try:
+            # 清除现有标签（保持 sel）
+            for tag in self._text.tag_names():
+                if tag != 'sel':
+                    self._text.tag_remove(tag, start, end)
+            # 额外确保 code_block 不延续到新渲染范围外
+            self._in_code_block = False
+            
+            # 获取文本内容
+            content = self._text.get(start, end)
+            lines = content.split('\n')
+            
+            # 计算起始行号
+            start_line = int(start.split('.')[0])
+            
+            # 逐行处理
+            self._in_code_block = False
 
-        for i, line in enumerate(lines):
-            line_num = start_line + i
-            line_start = f"{line_num}.0"
-            line_end = f"{line_num}.end"
-            
-            stripped = line.strip()
-            is_fence = stripped.startswith("```")
-            # 检查代码块状态（允许行首/行内有空白，strip 后以 ``` 开头视为开始/结束）
-            if re.match(PATTERNS['code_block_start'], line) or is_fence:
-                # 如果已在代码块内且再次遇到围栏，先收尾再继续，防止漏关
-                if self._in_code_block:
+            for i, line in enumerate(lines):
+                line_num = start_line + i
+                line_start = f"{line_num}.0"
+                line_end = f"{line_num}.end"
+                
+                stripped = line.strip()
+                is_fence = stripped.startswith("```")
+                # 检查代码块状态
+                if re.match(PATTERNS['code_block_start'], line) or is_fence:
+                    if self._in_code_block:
+                        self._text.tag_add('code_block_marker', line_start, line_end)
+                        self._in_code_block = False
+                        continue
+                    self._in_code_block = True
+                    self._code_block_start_line = line_num
                     self._text.tag_add('code_block_marker', line_start, line_end)
-                    self._in_code_block = False
                     continue
-                self._in_code_block = True
-                self._code_block_start_line = line_num
-                self._text.tag_add('code_block_marker', line_start, line_end)
-                continue
-            
-            if self._in_code_block and (re.match(PATTERNS['code_block_end'], line) or is_fence):
-                self._in_code_block = False
-                self._text.tag_add('code_block_marker', line_start, line_end)
-                continue
-            
-            if self._in_code_block:
-                self._text.tag_add('code_block', line_start, line_end)
-                continue
-            
-            # 高亮当前行
-            self._highlight_line(line, line_num)
+                
+                if self._in_code_block and (re.match(PATTERNS['code_block_end'], line) or is_fence):
+                    self._in_code_block = False
+                    self._text.tag_add('code_block_marker', line_start, line_end)
+                    continue
+                
+                if self._in_code_block:
+                    self._text.tag_add('code_block', line_start, line_end)
+                    continue
+                
+                # 高亮当前行
+                self._highlight_line(line, line_num)
+        finally:
+            self._is_highlighting = False
     
     def _highlight_line(self, line: str, line_num: int):
         """高亮单行"""
@@ -494,6 +509,11 @@ class SyntaxHighlighter:
         self.theme = theme
         self._configure_tags()
         self.highlight_all()
+
+    def refresh_styles(self):
+        """在编辑器字号变化后重建标签样式"""
+        self._configure_tags()
+        self.highlight_all()
     
     def enable(self):
         """启用语法高亮"""
@@ -552,10 +572,9 @@ class LineNumbers:
         self._update()
     
     def _on_modified(self, event=None):
-        """文本修改事件"""
-        if self._text.edit_modified():
-            self._text.edit_modified(False)
-            self._update()
+        """文本修改事件 - 仅由主应用 gui.py 的单一事件源触发刷新"""
+        # 彻底移除此处的业务逻辑，防止多重调用 edit_modified(False) 导致主应用监听失败
+        pass
     
     def _on_scroll(self, event=None):
         """滚动事件"""

@@ -70,7 +70,6 @@ from ui.features import (
 from ui.features.syntax_highlight import SyntaxHighlighter, HighlightTheme
 from ui.features.smart_editing import SmartEditor
 from ui.features.minimap import Minimap
-from ui.features.preview_themes import preview_theme_manager, PreviewTheme
 from ui.features.code_folding import CodeFolding
 from ui.features.split_screen import SplitScreenManager, FullScreenPreview, PrintPreview, SplitMode
 from ui.icons import TOOLBAR_ICONS, icons, get_toolbar_icon, get_status_icon, get_message_icon
@@ -93,6 +92,13 @@ from ui.busy_state import BusyState
 from ui.drag_drop import handle_drop_for_app
 from ui.startup_content import insert_example_if_empty_for_app
 from ui.formatting import show_format_dialog_for_app
+from ui.layout_builder import (
+    build_header,
+    build_main_content,
+    build_sidebar_content,
+    build_input_panel,
+    build_preview_panel,
+)
 
 
 class App(ctk.CTk):
@@ -120,6 +126,8 @@ class App(ctk.CTk):
         
         # 加载配置
         self.config = load_config()
+        self.product_mode = self.config.get('product_mode', 'converter')
+        self.show_advanced_toolbar = bool(self.config.get('show_advanced_toolbar', False))
 
         # 模板管理器（共享配置，供导出与管理对话使用）
         self.template_manager = TemplateManager(self, self.config)
@@ -129,7 +137,7 @@ class App(ctk.CTk):
 
         self.preview_sync = PreviewSyncFeature(self)
         self.window_geometry_feature = WindowGeometryFeature(self)
-        self.theme_feature.apply_mode(self.config.get('theme', 'light'))
+        self.theme_feature.apply_mode('light')
         
         # 设置窗口背景
         self.configure(fg_color=COLORS['bg_light'])
@@ -166,43 +174,41 @@ class App(ctk.CTk):
         self.editor_zoom_feature = EditorZoomFeature(self)
         self.tab_manager = TabManagerFeature(self)
         self.statistics_detail = StatisticsDetailFeature(self)
-        self.undo_redo = UndoRedoFeature(self)  # 添加撤销/重做功能
         
-        # Phase 1 新增功能
-        self.focus_mode = FocusModeFeature(self)
+        # 将所有 UI 强相关的 Feature 提前初始化，确保在 _init_ui 之前全部实例化
+        self.theme_editor = ThemeEditorFeature(self)
         self.reading_mode = ReadingModeFeature(self)
         self.toc_generator = TOCGeneratorFeature(self)
         self.watermark_feature = WatermarkFeature(self)
-        self.theme_editor = ThemeEditorFeature(self)
         self.template_selector = TemplateSelectorFeature(self)
         self.header_footer = HeaderFooterFeature(self)
+        self.focus_mode = FocusModeFeature(self)  # 补上缺失的 focus_mode
         
-        # Phase 3 新增功能
-        self.document_stats_feature = DocumentStatsFeature(self)
-        self.global_search_replace = GlobalSearchReplaceFeature(self)
-        self.link_checker = LinkCheckerFeature(self)
-        self.snippet_library = SnippetLibraryFeature(self)
-        self.batch_export_feature = BatchExportFeature(self)
-        self.chart_editor = ChartEditorFeature(self)
-        self.mindmap_feature = MindmapFeature(self)
-        self.bibliography_feature = BibliographyFeature(self)
-        self.version_control = VersionControlFeature(self)
-        self.html_export_feature = HTMLExportFeature(self)  # HTML 导出
-        self.diagram_feature = DiagramFeature(self)         # 图表渲染支持
-        
-        # Phase 4 新增功能
-        self.ai_assistant = AIAssistantFeature(self)
-        
-        # Phase 5 新增功能 - OCR
-        self.ocr_feature = OCRFeature(self)
-        
-        # Phase 5 新增功能 - 数据库、协作
-        self.database_feature = DatabaseFeature(self)
-        self.collaboration_feature = CollaborationFeature(self)
-        
-        # Phase 6 新增功能 - 用户体验优化
-        self.keyboard_shortcuts = KeyboardShortcutsFeature(self)
-        self.folder_view_feature = FolderViewFeature(self)
+        # Phase 3-6 功能也一并提前初始化，确保全局可用
+        self._optional_feature_factories = {
+            'document_stats_feature': lambda: DocumentStatsFeature(self),
+            'global_search_replace': lambda: GlobalSearchReplaceFeature(self),
+            'link_checker': lambda: LinkCheckerFeature(self),
+            'snippet_library': lambda: SnippetLibraryFeature(self),
+            'batch_export_feature': lambda: BatchExportFeature(self),
+            'chart_editor': lambda: ChartEditorFeature(self),
+            'mindmap_feature': lambda: MindmapFeature(self),
+            'bibliography_feature': lambda: BibliographyFeature(self),
+            'version_control': lambda: VersionControlFeature(self),
+            'html_export_feature': lambda: HTMLExportFeature(self),
+            'diagram_feature': lambda: DiagramFeature(self),
+            'ai_assistant': lambda: AIAssistantFeature(self),
+            'ocr_feature': lambda: OCRFeature(self),
+            'database_feature': lambda: DatabaseFeature(self),
+            'collaboration_feature': lambda: CollaborationFeature(self),
+            'keyboard_shortcuts': lambda: KeyboardShortcutsFeature(self),
+            'folder_view_feature': lambda: FolderViewFeature(self),
+        }
+        for attr_name in self._optional_feature_factories:
+            setattr(self, attr_name, None)
+
+        # 彻底移除自定义撤销系统的引用，完全回归原生
+        # if hasattr(self, 'undo_redo'): del self.undo_redo
         
         # 初始化 UI
         self._init_ui()
@@ -218,6 +224,27 @@ class App(ctk.CTk):
         self._last_saved_content = ""
         self._last_content_snapshot = None
 
+    def _ensure_optional_feature(self, attr_name: str, display_name: str = ""):
+        feature = getattr(self, attr_name, None)
+        if feature is not None:
+            return feature
+
+        factory = self._optional_feature_factories.get(attr_name)
+        if factory is None:
+            return None
+
+        try:
+            feature = factory()
+            setattr(self, attr_name, feature)
+            return feature
+        except Exception as exc:
+            print(f"Failed to initialize optional feature '{attr_name}': {exc}")
+            if hasattr(self, 'status_bar_feature'):
+                try:
+                    self.update_status(f"{display_name or attr_name} 鍔犺浇澶辫触")
+                except Exception:
+                    pass
+            return None
 
     def _init_ui(self):
         """初始化用户界面"""
@@ -226,11 +253,10 @@ class App(ctk.CTk):
         self._create_status_bar()  # 先创建状态栏
         self._create_main_content()  # 再创建主内容（包含_insert_example调用）
         
-        # 应用初始主题
-        ctk.set_appearance_mode("Light" if self.config.get('theme') == 'light' else "Dark")
-        if self.config.get('custom_theme'):
-            self.apply_custom_theme(self.config['custom_theme'])
-
+        # 建立内容变化的监听 (彻底解决自动刷新问题)
+        # 通过监听 Text 内部的 <<Modified>> 事件，使用 add=True 避免干扰其他功能（如撤销系统）
+        if hasattr(self, 'input_text') and hasattr(self.input_text, '_textbox'):
+            self.input_text._textbox.bind('<<Modified>>', self._on_text_modified_event, add=True)
         self.header_styler.update_states()
         
         # 绑定快捷键
@@ -255,9 +281,10 @@ class App(ctk.CTk):
         self.bind('<F12>', lambda e: self.reading_mode.toggle())  # 阅读模式
         self.bind('<Control-F11>', lambda e: self.toggle_fullscreen_preview())  # 全屏预览
         self.bind('<Control-Shift-p>', lambda e: self.show_print_preview())  # 打印预览
-        self.bind('<Control-Shift-o>', lambda e: self.show_ocr())  # OCR 功能
-        self.bind('<Control-Shift-d>', lambda e: self.show_database())  # 文档库
-        self.bind('<Control-Alt-c>', lambda e: self.show_collaboration())  # 协作 (改为Ctrl+Alt+C避免与复制冲突)
+        if self.show_advanced_toolbar:
+            self.bind('<Control-Shift-o>', lambda e: self.show_ocr())  # OCR 功能
+            self.bind('<Control-Shift-d>', lambda e: self.show_database())  # 文档库
+            self.bind('<Control-Alt-c>', lambda e: self.show_collaboration())  # 协作
         
         # 绑定窗口关闭事件
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -283,14 +310,30 @@ class App(ctk.CTk):
         # 设置撤销/重做系统（必须在编辑器创建后）
         self.after(100, self._setup_undo_system)  # 延迟100ms确保编辑器完全初始化
     
+        self.config['split_mode'] = SplitMode.HORIZONTAL.value
+        self.config['split_ratio'] = 0.5
+        self.preview_visible = True
+        self.after(120, self._enforce_initial_split_layout)
+
     def _setup_undo_system(self):
-        """设置撤销系统"""
+        """设置极致精细化撤销系统"""
         try:
-            if hasattr(self, 'undo_redo') and hasattr(self, 'input_text'):
-                if hasattr(self.input_text, '_textbox'):
-                    self.undo_redo.setup(self.input_text._textbox)
-        except Exception:
-            pass
+            if hasattr(self, 'input_text') and hasattr(self.input_text, '_textbox'):
+                t = self.input_text._textbox
+                
+                # 1. 彻底清除任何自定义干扰
+                for attr in ('undo_manager', '_original_insert', '_original_delete'):
+                    if hasattr(t, attr): delattr(t, attr)
+                
+                # 2. 启用原生撤销，禁用自动分隔，由编辑器精细控制
+                t.configure(undo=True, autoseparators=False, maxundo=5000)
+                
+                # 3. 建立初始锚点
+                t.edit_reset()
+                t.edit_separator()
+                print("✅ 极致精细化撤销系统已就绪")
+        except Exception as e:
+            print(f"Undo system error: {e}")
     
     def _init_editor_enhancements(self):
         """初始化编辑器增强功能"""
@@ -324,14 +367,13 @@ class App(ctk.CTk):
             print("✅ 代码折叠已启用")
             
             # 5. 预览主题管理器
-            self.preview_theme_manager = preview_theme_manager
-            saved_theme = self.config.get('preview_theme', 'github')
-            self.preview_theme_manager.set_current_theme(saved_theme)
-            print(f"✅ 预览主题已设置: {saved_theme}")
-            
             # 6. 分屏管理器
             self.split_screen = SplitScreenManager(self)
             print("✅ 分屏管理器已启用")
+            self.config['split_mode'] = SplitMode.HORIZONTAL.value
+            self.config['split_ratio'] = 0.5
+            self.preview_visible = True
+            self.after(50, self._enforce_initial_split_layout)
             
             # 7. 全屏预览
             self.fullscreen_preview = FullScreenPreview(self)
@@ -346,7 +388,7 @@ class App(ctk.CTk):
             import traceback
             traceback.print_exc()
     
-    def _create_header(self):
+    def _legacy_create_header(self):
         """创建顶部标题栏"""
         self.header = ctk.CTkFrame(self, fg_color=COLORS['primary'], height=60, corner_radius=0)
         self.header.pack(fill="x", side="top")
@@ -369,7 +411,7 @@ class App(ctk.CTk):
         toolbar_frame = ctk.CTkFrame(self.header, fg_color="transparent")
         toolbar_frame.pack(side="left", padx=24)
         
-        # 工具按钮 - 使用更可爱的图标
+        # 工具按钮：默认聚焦转换主链路，高级能力按需显示
         tools = [
             (get_toolbar_icon("open"), "打开", self.open_file, "Ctrl+O"),
             (get_toolbar_icon("save"), "保存", self.save_file, "Ctrl+S"),
@@ -382,18 +424,21 @@ class App(ctk.CTk):
             ("👁", "仅预览", self.set_preview_only, ""),
             (get_toolbar_icon("export"), "导出", self.export_to_word, "Ctrl+Shift+S"),
             (get_toolbar_icon("pdf"), "PDF", self.export_to_pdf, ""),
-            ("🌐", "HTML", self.show_html_export, ""),  # HTML 导出
-            (get_toolbar_icon("ocr"), "OCR", self.show_ocr, "Ctrl+Shift+O"),
-            (get_toolbar_icon("ai"), "AI助手", self.show_ai_assistant, "Ctrl+I"),
+            ("🌐", "HTML", self.show_html_export, ""),
             (get_toolbar_icon("batch"), "批量导出", self.show_batch_export, ""),
-            (get_toolbar_icon("chart"), "图表", self.show_chart_editor, ""),
-            (get_toolbar_icon("mindmap"), "导图", self.show_mindmap, ""),
-            (get_toolbar_icon("bibliography"), "文献", self.show_bibliography, ""),
-            (get_toolbar_icon("version"), "版本", self.show_version_control, ""),
-            (get_toolbar_icon("link"), "链接", self.show_link_checker, ""),
-            (get_toolbar_icon("database"), "文档库", self.show_database, "Ctrl+Shift+D"),
-            (get_toolbar_icon("collab"), "协作", self.show_collaboration, "Ctrl+Alt+C"),
         ]
+        if self.show_advanced_toolbar:
+            tools.extend([
+                (get_toolbar_icon("ocr"), "OCR", self.show_ocr, "Ctrl+Shift+O"),
+                (get_toolbar_icon("ai"), "AI助手", self.show_ai_assistant, "Ctrl+I"),
+                (get_toolbar_icon("chart"), "图表", self.show_chart_editor, ""),
+                (get_toolbar_icon("mindmap"), "导图", self.show_mindmap, ""),
+                (get_toolbar_icon("bibliography"), "文献", self.show_bibliography, ""),
+                (get_toolbar_icon("version"), "版本", self.show_version_control, ""),
+                (get_toolbar_icon("link"), "链接", self.show_link_checker, ""),
+                (get_toolbar_icon("database"), "文档库", self.show_database, "Ctrl+Shift+D"),
+                (get_toolbar_icon("collab"), "协作", self.show_collaboration, "Ctrl+Alt+C"),
+            ])
         
         self.preview_btn = None
         for icon, tip, cmd, shortcut in tools:
@@ -702,8 +747,29 @@ class App(ctk.CTk):
     def _create_sidebar_content(self):
         """创建侧边栏内容"""
         # 文件夹视图
-        self.folder_view = self.folder_view_feature.create_view(self.sidebar)
-        self.folder_view.pack(fill="both", expand=True, pady=(0, 5))
+        self.folder_view = None
+        folder_feature = self._ensure_optional_feature('folder_view_feature', '文件夹视图')
+        if folder_feature:
+            try:
+                self.folder_view = folder_feature.create_view(self.sidebar)
+                self.folder_view.pack(fill="both", expand=True, pady=(0, 5))
+            except Exception:
+                self.folder_view = None
+        if self.folder_view is None:
+            folder_placeholder = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+            folder_placeholder.pack(fill="x", padx=12, pady=(0, 5))
+            ctk.CTkLabel(
+                folder_placeholder,
+                text="文件夹视图未启用",
+                text_color=COLORS['text_secondary'],
+                anchor="w",
+            ).pack(fill="x", pady=(6, 2))
+            ctk.CTkButton(
+                folder_placeholder,
+                text="打开文件夹",
+                height=30,
+                command=self.open_folder,
+            ).pack(fill="x")
         
         # 分隔线
         separator1 = ctk.CTkFrame(self.sidebar, height=1, fg_color=COLORS['border'])
@@ -790,7 +856,11 @@ class App(ctk.CTk):
         self.input_text = self.input_editor
         
         # 绑定实时预览（带防抖）
-        self.input_editor.bind('<KeyRelease>', self._on_text_change_debounced)
+        # 注意：必须绑定到内部的 text 组件，因为 Frame 不会接收键盘事件，导致自动刷新失效
+        if hasattr(self.input_editor, 'text'):
+            self.input_editor.text.bind('<KeyRelease>', self._on_text_change_debounced, add="+")
+        else:
+            self.input_editor.bind('<KeyRelease>', self._on_text_change_debounced)
         # Tab 跳转到下一处占位文本；Esc 取消占位跳转
         self.input_editor.bind('<Tab>', self.insert_templates.on_tab)
         self.input_editor.bind('<Escape>', self.insert_templates.on_escape)
@@ -813,78 +883,6 @@ class App(ctk.CTk):
         # 顶部控件栏
         top_frame = ctk.CTkFrame(self.preview_card, fg_color="transparent", height=30)
         top_frame.pack(fill="x", padx=10, pady=(4, 0))
-        
-        # 左侧：预览主题选择 + 仿真页面开关
-        theme_frame = ctk.CTkFrame(top_frame, fg_color="transparent")
-        theme_frame.pack(side="left")
-        
-        self.page_view_btn = ctk.CTkButton(
-            theme_frame,
-            text="📄 页面模式",
-            width=80,
-            height=24,
-            corner_radius=6,
-            fg_color=COLORS['bg_card'],
-            text_color=COLORS['text_primary'],
-            hover_color=COLORS['highlight'],
-            border_width=1,
-            border_color=COLORS['border'],
-            font=ctk.CTkFont(size=10, weight="bold"),
-            command=self.toggle_page_view
-        )
-        self.page_view_btn.pack(side="left", padx=(0, 8))
-        
-        self.typewriter_btn = ctk.CTkButton(
-            theme_frame,
-            text="⌨️ 打字机",
-            width=80,
-            height=24,
-            corner_radius=6,
-            fg_color=COLORS['bg_card'],
-            text_color=COLORS['text_primary'],
-            hover_color=COLORS['highlight'],
-            border_width=1,
-            border_color=COLORS['border'],
-            font=ctk.CTkFont(size=10, weight="bold"),
-            command=self.toggle_typewriter_mode
-        )
-        self.typewriter_btn.pack(side="left", padx=(0, 8))
-        
-        self.toc_btn = ctk.CTkButton(
-            theme_frame,
-            text="📋 大纲",
-            width=80,
-            height=24,
-            corner_radius=6,
-            fg_color=COLORS['bg_card'],
-            text_color=COLORS['text_primary'],
-            hover_color=COLORS['highlight'],
-            border_width=1,
-            border_color=COLORS['border'],
-            font=ctk.CTkFont(size=10, weight="bold"),
-            command=self.toggle_preview_toc
-        )
-        self.toc_btn.pack(side="left", padx=(0, 8))
-        
-        # 主题下拉：使用预览主题管理器的显示名
-        theme_display_names = [display for _, display in preview_theme_manager.get_theme_names()]
-        self.preview_theme_option = ctk.CTkOptionMenu(
-            theme_frame,
-            values=theme_display_names,
-            command=self._on_preview_theme_change,
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS['text_secondary'],
-            fg_color="#FFFFFF",
-            button_color="#FFFFFF",
-            button_hover_color=COLORS.get('highlight', '#E5E7EB'),
-        )
-        try:
-            current_display = preview_theme_manager.get_current_theme().display_name
-            if current_display in theme_display_names:
-                self.preview_theme_option.set(current_display)
-        except Exception:
-            pass
-        self.preview_theme_option.pack(side="left", padx=(0, 4))
         
         # 右侧：缩放控件
         self.preview_zoom_controls = self.preview_zoom_feature.create_controls(top_frame)
@@ -1044,16 +1042,101 @@ class App(ctk.CTk):
     def _insert_example(self):
         """插入示例Markdown"""
         insert_example_if_empty_for_app(self)
+        # 强制在示例文本后插入一个基准点，确保后续修改是分步的
+        try:
+            if hasattr(self.input_text, '_textbox'):
+                self.input_text._textbox.edit_separator()
+                print("✅ 已建立撤销基准点")
+        except Exception:
+            pass
     
     def insert_text(self, text: str):
         """在光标位置插入文本"""
         self.input_text.insert("insert", text)
         self.on_text_change(None)
     
+    def _get_editor_content(self) -> str:
+        try:
+            return self.input_text.get("1.0", "end-1c")
+        except Exception:
+            return ""
+
+    def _update_welcome_state(self) -> None:
+        panel = getattr(self, "welcome_panel", None)
+        editor = getattr(self, "input_editor", None)
+        if panel is None or editor is None:
+            return
+
+        has_content = bool((self._get_editor_content() or "").strip())
+        visible = bool(getattr(panel, "_visible", True))
+
+        if has_content and visible:
+            try:
+                panel.pack_forget()
+                panel._visible = False
+            except Exception:
+                pass
+        elif (not has_content) and (not visible):
+            try:
+                panel.pack(fill="x", padx=6, pady=(8, 4), before=editor)
+                panel._visible = True
+            except Exception:
+                pass
+
+    def paste_from_clipboard(self) -> None:
+        try:
+            clipboard_text = self.clipboard_get()
+        except Exception:
+            clipboard_text = ""
+
+        if not clipboard_text:
+            self.update_status("剪贴板里没有可粘贴的文本")
+            return
+
+        try:
+            if not self._get_editor_content().strip():
+                self.input_text.delete("1.0", "end")
+            self.input_text.insert("1.0", clipboard_text)
+            self.on_text_change(None)
+            self.update_status("已从剪贴板导入内容")
+        except Exception as exc:
+            self.update_status(f"粘贴失败: {exc}")
+
+    def load_welcome_sample(self) -> None:
+        sample = """# 项目状态周报
+
+## 本周进展
+
+- 完成 Markdown 到 Word 的导出优化
+- 新增模板选择与导出前检查
+- 修复图片路径和表格格式问题
+
+## 风险项
+
+| 项目 | 风险 | 处理建议 |
+| --- | --- | --- |
+| 图片 | 路径失效 | 导出前检查 |
+| 表格 | 列数不一致 | 统一表头格式 |
+
+## 公式
+
+$$
+E = mc^2
+$$
+"""
+        try:
+            self.input_text.delete("1.0", "end")
+            self.input_text.insert("1.0", sample)
+            self.on_text_change(None)
+            self.update_status("已插入示例内容")
+        except Exception as exc:
+            self.update_status(f"插入示例失败: {exc}")
+
     def _on_text_change_debounced(self, event):
         self.preview_sync.on_text_change_debounced(event)
     
     def on_text_change(self, event):
+        self._update_welcome_state()
         self.preview_sync.on_text_change(event)
     
     def _on_preview_change(self, markdown_text: str):
@@ -1090,72 +1173,81 @@ class App(ctk.CTk):
     def show_document_stats(self):
         """显示文档统计分析。"""
         try:
-            if hasattr(self, 'document_stats_feature') and self.document_stats_feature:
-                self.document_stats_feature.show_stats()
+            feature = self._ensure_optional_feature('document_stats_feature', '文档统计')
+            if feature:
+                feature.show_stats()
         except Exception:
             pass
     
     def show_link_checker(self):
         """显示链接检查器。"""
         try:
-            if hasattr(self, 'link_checker') and self.link_checker:
-                self.link_checker.show_dialog()
+            feature = self._ensure_optional_feature('link_checker', '链接检查')
+            if feature:
+                feature.show_dialog()
         except Exception:
             pass
     
     def show_snippet_library(self):
         """显示片段库。"""
         try:
-            if hasattr(self, 'snippet_library') and self.snippet_library:
-                self.snippet_library.show_dialog()
+            feature = self._ensure_optional_feature('snippet_library', '片段库')
+            if feature:
+                feature.show_dialog()
         except Exception:
             pass
     
     def show_batch_export(self):
         """显示批量导出。"""
         try:
-            if hasattr(self, 'batch_export_feature') and self.batch_export_feature:
-                self.batch_export_feature.show_dialog()
+            feature = self._ensure_optional_feature('batch_export_feature', '批量导出')
+            if feature:
+                feature.show_dialog()
         except Exception:
             pass
     
     def show_html_export(self):
         """显示 HTML 导出对话框。"""
         try:
-            if hasattr(self, 'html_export_feature') and self.html_export_feature:
-                self.html_export_feature.show_dialog()
+            feature = self._ensure_optional_feature('html_export_feature', 'HTML 导出')
+            if feature:
+                feature.show_dialog()
         except Exception:
             pass
     
     def show_chart_editor(self):
         """显示图表编辑器。"""
         try:
-            if hasattr(self, 'chart_editor') and self.chart_editor:
-                self.chart_editor.show_dialog()
+            feature = self._ensure_optional_feature('chart_editor', '图表')
+            if feature:
+                feature.show_dialog()
         except Exception:
             pass
     
     def show_mindmap(self):
         """显示思维导图转换器。"""
         try:
-            if hasattr(self, 'mindmap_feature') and self.mindmap_feature:
-                self.mindmap_feature.show_dialog()
+            feature = self._ensure_optional_feature('mindmap_feature', '导图')
+            if feature:
+                feature.show_dialog()
         except Exception:
             pass
     
     def show_bibliography(self):
         """显示文献引用管理。"""
         try:
-            if hasattr(self, 'bibliography_feature') and self.bibliography_feature:
-                self.bibliography_feature.show_dialog()
+            feature = self._ensure_optional_feature('bibliography_feature', '文献')
+            if feature:
+                feature.show_dialog()
         except Exception:
             pass
     
     def show_version_control(self):
         """显示版本历史。"""
         try:
-            if hasattr(self, 'version_control') and self.version_control:
-                self.version_control.show_dialog()
+            feature = self._ensure_optional_feature('version_control', '版本历史')
+            if feature:
+                feature.show_dialog()
         except Exception:
             pass
 
@@ -1296,48 +1388,6 @@ class App(ctk.CTk):
 
         self.header_styler.update_states()
     
-    def toggle_page_view(self):
-        """切换预览区的仿真页面模式"""
-        if hasattr(self, 'preview'):
-            enabled = not getattr(self.preview, '_page_view_enabled', False)
-            self.preview.set_page_view(enabled)
-            
-            # 更新按钮样式
-            if enabled:
-                self.page_view_btn.configure(fg_color=COLORS['primary'], text_color="white")
-                self.update_status("� 已开启仿真页面模式")
-            else:
-                self.page_view_btn.configure(fg_color=COLORS['bg_card'], text_color=COLORS['text_primary'])
-                self.update_status("📄 已恢复流式预览模式")
-    
-    def toggle_typewriter_mode(self):
-        """切换打字机模式"""
-        if hasattr(self, 'input_editor'):
-            enabled = not getattr(self.input_editor, '_typewriter_mode', False)
-            self.input_editor.set_typewriter_mode(enabled)
-            
-            # 更新按钮样式
-            if enabled:
-                self.typewriter_btn.configure(fg_color=COLORS['primary'], text_color="white")
-                self.update_status("⌨️ 已开启打字机模式 (光标居中)")
-            else:
-                self.typewriter_btn.configure(fg_color=COLORS['bg_card'], text_color=COLORS['text_primary'])
-                self.update_status("⌨️ 已恢复普通编辑模式")
-
-    def toggle_preview_toc(self):
-        """切换预览区浮动大纲"""
-        if hasattr(self, 'preview'):
-            self.preview.toggle_floating_toc()
-            enabled = getattr(self.preview, '_toc_visible', False)
-            
-            # 更新按钮样式
-            if enabled:
-                self.toc_btn.configure(fg_color=COLORS['primary'], text_color="white")
-                self.update_status("📋 已开启浮动大纲")
-            else:
-                self.toc_btn.configure(fg_color=COLORS['bg_card'], text_color=COLORS['text_primary'])
-                self.update_status("📋 已关闭浮动大纲")
-    
     def refresh_preview(self):
         """手动刷新预览内容"""
         try:
@@ -1410,38 +1460,49 @@ class App(ctk.CTk):
             # 更新编辑器字体
             if hasattr(self, 'input_editor'):
                 self.input_editor.set_font_size(new_size)
+            if hasattr(self, 'syntax_highlighter'):
+                try:
+                    self.syntax_highlighter.refresh_styles()
+                except Exception:
+                    pass
             
             self.update_status(f"🔤 字体大小: {new_size}px")
     
     def show_ai_assistant(self):
         """显示 AI 写作助手"""
-        if hasattr(self, 'ai_assistant') and self.ai_assistant:
-            self.ai_assistant.show_dialog()
+        feature = self._ensure_optional_feature('ai_assistant', 'AI 助手')
+        if feature:
+            feature.show_dialog()
     
     def show_ocr(self):
         """显示 OCR 图片转 Markdown 对话框"""
-        if hasattr(self, 'ocr_feature') and self.ocr_feature:
-            self.ocr_feature.show_dialog()
+        feature = self._ensure_optional_feature('ocr_feature', 'OCR')
+        if feature:
+            feature.show_dialog()
     
     def show_database(self):
         """显示 Markdown 数据库/文档库功能"""
-        if hasattr(self, 'database_feature') and self.database_feature:
-            self.database_feature.show_vault_selector()
+        feature = self._ensure_optional_feature('database_feature', '文档库')
+        if feature:
+            feature.show_vault_selector()
     
     def show_collaboration(self):
         """显示实时协作功能"""
-        if hasattr(self, 'collaboration_feature') and self.collaboration_feature:
-            self.collaboration_feature.show_dialog()
+        feature = self._ensure_optional_feature('collaboration_feature', '协作')
+        if feature:
+            feature.show_dialog()
     
     def show_keyboard_shortcuts(self):
         """显示快捷键设置"""
-        if hasattr(self, 'keyboard_shortcuts') and self.keyboard_shortcuts:
-            self.keyboard_shortcuts.show_dialog()
+        feature = self._ensure_optional_feature('keyboard_shortcuts', '快捷键')
+        if feature:
+            feature.show_dialog()
     
     def open_folder(self):
         """打开文件夹"""
-        if hasattr(self, 'folder_view_feature') and self.folder_view_feature:
-            self.folder_view_feature.open_folder()
+        feature = self._ensure_optional_feature('folder_view_feature', '文件夹视图')
+        if feature:
+            feature.open_folder()
     
     def toggle_minimap(self):
         """切换迷你地图显示"""
@@ -1457,25 +1518,6 @@ class App(ctk.CTk):
             # 保存配置
             self.config['minimap_visible'] = self.minimap_visible
             save_config(self.config)
-    
-    def _on_preview_theme_change(self, choice):
-        """预览主题切换"""
-        # 根据显示名称找到主题名
-        for name, theme in preview_theme_manager.get_all_themes().items():
-            if theme.display_name == choice:
-                preview_theme_manager.set_current_theme(name)
-                self.config['preview_theme'] = name
-                save_config(self.config)
-                
-                # 应用主题到预览组件
-                if hasattr(self, 'preview'):
-                    theme_config = theme.to_tkinter_config()
-                    self.preview.apply_theme(theme_config)
-                
-                # 刷新预览
-                self.on_text_change(None)
-                self.update_status(f"🎨 预览主题: {choice}")
-                break
     
     def toggle_syntax_highlight(self, enabled: bool = None):
         """切换语法高亮"""
@@ -1535,6 +1577,28 @@ class App(ctk.CTk):
         """设置左右分屏"""
         if hasattr(self, 'split_screen'):
             self.split_screen.set_horizontal()
+
+    def _enforce_initial_split_layout(self):
+        """启动后多次校准左右分屏，避免初始化时序导致比例失真"""
+        self.config['split_mode'] = SplitMode.HORIZONTAL.value
+        self.config['split_ratio'] = 0.5
+        self.preview_visible = True
+
+        if hasattr(self, 'split_screen'):
+            self.split_screen.set_horizontal()
+
+        def _place_half():
+            try:
+                if not hasattr(self, 'paned_window'):
+                    return
+                self.paned_window.update_idletasks()
+                width = max(1, self.paned_window.winfo_width())
+                self.paned_window.sash_place(0, int(width * 0.5), 0)
+            except Exception:
+                pass
+
+        for delay in (0, 120, 260, 520):
+            self.after(delay, _place_half)
     
     def set_split_vertical(self):
         """设置上下分屏"""
@@ -1580,8 +1644,9 @@ class App(ctk.CTk):
             return
 
         # 降级使用旧的全局搜索替换功能
-        if hasattr(self, 'global_search_replace') and self.global_search_replace:
-            self.global_search_replace.show_dialog()
+        global_search = self._ensure_optional_feature('global_search_replace', '全局搜索替换')
+        if global_search:
+            global_search.show_dialog()
         elif self.search_dialog is None or not self.search_dialog.winfo_exists():
             # 回退到旧版对话框
             text_widget = self.input_editor._textbox
@@ -1705,6 +1770,38 @@ class App(ctk.CTk):
         """检查所有标签页是否有未保存的更改"""
         return self.tab_manager.check_all_tabs_unsaved_changes()
     
+    def _on_text_modified_event(self, event=None):
+        """中心化的内容变动分发器：处理预览、大纲、高亮、行号和修改标记"""
+        try:
+            # 检查是否是真的修改
+            if self.input_text._textbox.edit_modified():
+                # 1. 触发防抖后的预览和大纲更新
+                self._on_text_change_debounced(None)
+                
+                # 2. 手动驱动子模块更新
+                try:
+                    if hasattr(self, 'syntax_highlighter'):
+                        self.syntax_highlighter._on_key_release()
+                    if hasattr(self.input_text, 'line_numbers'):
+                        # 确保 line_numbers 是 LineNumbers 实例
+                        ln = getattr(self.input_text, 'line_numbers', None)
+                        if ln and hasattr(ln, '_update'):
+                            ln._update()
+                    if hasattr(self, 'minimap'):
+                        self.minimap._schedule_update()
+                except Exception as e:
+                    print(f"Submodule update error: {e}")
+
+                # 3. 标记内容已修改（用于标题显示 * 号）
+                if not self._content_modified:
+                    self._content_modified = True
+                    self._update_title()
+                
+                # 4. 重要：重置标记以允许下一次触发
+                self.input_text._textbox.edit_modified(False)
+        except Exception as e:
+            print(f"Centralized refresh error: {e}")
+    
     def _on_closing(self):
         """窗口关闭事件"""
         try:
@@ -1749,31 +1846,29 @@ class App(ctk.CTk):
     
     def _undo(self):
         """撤销操作"""
-        # 使用新的撤销系统
-        if hasattr(self, 'undo_redo') and self.undo_redo.undo_manager:
-            self.undo_redo.undo()
-        else:
-            # 降级使用原生undo（如果新系统未初始化）
-            try:
-                if hasattr(self, 'input_text') and hasattr(self.input_text, '_textbox'):
-                    self.input_text._textbox.edit_undo()
-                    self.on_text_change(None)
-            except tk.TclError:
-                pass  # 没有可撤销的操作
+        try:
+            if hasattr(self, 'input_text') and hasattr(self.input_text, '_textbox'):
+                self.input_text._textbox.edit_undo()
+                # 撤销后强制触发预览更新
+                self.preview_sync.on_text_change(None)
+                self.update_status("↶ 撤销成功")
+        except tk.TclError:
+            self.update_status("没有可撤销的操作")
+        except Exception as e:
+            print(f"Undo error: {e}")
     
     def _redo(self):
         """重做操作"""
-        # 使用新的撤销系统
-        if hasattr(self, 'undo_redo') and self.undo_redo.undo_manager:
-            self.undo_redo.redo()
-        else:
-            # 降级使用原生redo（如果新系统未初始化）
-            try:
-                if hasattr(self, 'input_text') and hasattr(self.input_text, '_textbox'):
-                    self.input_text._textbox.edit_redo()
-                    self.on_text_change(None)
-            except tk.TclError:
-                pass  # 没有可重做的操作
+        try:
+            if hasattr(self, 'input_text') and hasattr(self.input_text, '_textbox'):
+                self.input_text._textbox.edit_redo()
+                # 重做后强制触发预览更新
+                self.preview_sync.on_text_change(None)
+                self.update_status("↷ 重做成功")
+        except tk.TclError:
+            self.update_status("没有可重做的操作")
+        except Exception as e:
+            print(f"Redo error: {e}")
     
     # ==================== 窗口位置记忆 ====================
     
@@ -1852,6 +1947,26 @@ class App(ctk.CTk):
                 menu.tk_popup(event.x_root, event.y_root)
             finally:
                 menu.grab_release()
+
+    def _create_header(self):
+        """创建顶部标题栏"""
+        build_header(self)
+
+    def _legacy_create_main_content(self):
+        """创建主内容区域"""
+        build_main_content(self)
+
+    def _legacy_create_sidebar_content(self):
+        """创建侧边栏内容"""
+        build_sidebar_content(self)
+
+    def _legacy_create_input_panel(self, parent):
+        """创建输入面板"""
+        build_input_panel(self, parent)
+
+    def _legacy_create_preview_panel(self, parent):
+        """创建预览面板"""
+        build_preview_panel(self, parent)
 
     
     

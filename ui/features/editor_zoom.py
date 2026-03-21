@@ -219,11 +219,14 @@ class EditorZoomFeature:
                 # 计算新字体大小：100% = 21pt
                 new_font_size = int(self.BASE_FONT_SIZE * self._scale)
                 new_font_size = max(10, min(32, new_font_size))  # 限制范围 10-32pt
-                
-                # 只更新字体大小，不触发布局重算
-                self.app.input_text._textbox.configure(font=('Consolas', new_font_size))
-                self.app.input_text.line_numbers.configure(font=('Consolas', new_font_size))
-                self.app.input_text.font_size = new_font_size
+
+                self.app.input_text.set_font_size(new_font_size)
+
+                if hasattr(self.app, 'syntax_highlighter'):
+                    try:
+                        self.app.syntax_highlighter.refresh_styles()
+                    except Exception:
+                        pass
         except Exception:
             pass
     

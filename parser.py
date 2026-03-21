@@ -57,24 +57,25 @@ def parse_inline(text: str) -> List[InlineElement]:
     
     # 简化的正则模式（按优先级排序，使用非贪婪匹配）
     # 合并成一个大正则，每个模式用括号分组
-    # 注意：斜体匹配需要确保不会匹配乘法表达式中的星号
+    # 注意：公式匹配应具有最高优先级，以避免与斜体等符号冲突
     pattern = (
         r'(!\[[^\]]*\]\([^\)]+\))'           # 1: 图片
         r'|(\[[^\]]+\]\([^\)]+\))'            # 2: 链接
-        r'|(`[^`]+`)'                          # 3: 行内代码
-        r'|(\$[^$]+\$)'                        # 4: 行内公式
-        r'|(<br\s*/?>)'                         # 5: 换行标签 <br> 或 <br/>
-        r'|(<sup>[^<]+</sup>)'                 # 6: 上标 HTML
-        r'|(<sub>[^<]+</sub>)'                 # 7: 下标 HTML
-        r'|(\*\*\*.+?\*\*\*)'                  # 8: 粗斜体 ***
-        r'|(___.+?___)'                        # 9: 粗斜体 ___
-        r'|(\*\*.+?\*\*)'                      # 10: 粗体 **
-        r'|(__.+?__)'                          # 11: 粗体 __
-        r'|(?<!\*)\*(?!\*)([^\*\s][^\*]*[^\*\s]|[^\*\s])\*(?!\*)'  # 12: 斜体 *text*
-        r'|(?<!_)_(?!_)([^_\s][^_]*[^_\s]|[^_\s])_(?!_)'    # 13: 斜体 _text_
-        r'|(~~.+?~~)'                          # 14: 删除线
-        r'|(\[\^\^[^\]]+\])'                    # 15: 尾注引用 [^^1]
-        r'|(\[\^[^\]]+\])'                      # 16: 脚注引用 [^1]
+        r'|(\$\$(?:\\\$|[^\$])+?\$\$)'         # 3: 块级公式（行内模式）
+        r'|(?<!\\)\$((?:\\\$|[^\$])+?)(?<!\\)\$'  # 4: 行内公式（负向断言支持转义）
+        r'|(`[^`]+`)'                          # 5: 行内代码
+        r'|(<br\s*/?>)'                         # 6: 换行标签
+        r'|(<sup>[^<]+</sup>)'                 # 7: 上标 HTML
+        r'|(<sub>[^<]+</sub>)'                 # 8: 下标 HTML
+        r'|(\*\*\*.+?\*\*\*)'                  # 9: 粗斜体
+        r'|(___.+?___)'                        # 10: 粗斜体
+        r'|(\*\*.+?\*\*)'                      # 11: 粗体
+        r'|(__.+?__)'                          # 12: 粗体
+        r'|(?<!\*)\*(?!\*)([^\*\s][^\*]*[^\*\s]|[^\*\s])\*(?!\*)'  # 13: 斜体
+        r'|(?<!_)_(?!_)([^_\s][^_]*[^_\s]|[^_\s])_(?!_)'    # 14: 斜体
+        r'|(~~.+?~~)'                          # 15: 删除线
+        r'|(\[\^\^[^\]]+\])'                    # 16: 尾注引用
+        r'|(\[\^[^\]]+\])'                      # 17: 脚注引用
     )
     
     last_end = 0
@@ -115,10 +116,19 @@ def parse_inline(text: str) -> List[InlineElement]:
             content = full_match[1:-1]
             elements.append(InlineElement(InlineType.CODE, content))
         
+        elif full_match.startswith('$$'):
+            # 块级公式（出现在行内）
+            content = full_match[2:-2]
+            elements.append(InlineElement(InlineType.MATH, content))
+
         elif full_match.startswith('$'):
             # 行内公式 $formula$
             content = full_match[1:-1]
-            elements.append(InlineElement(InlineType.MATH, content))
+            # 简单校验，如果是转义的美元符号（单独一个且前面是反斜杠），不作为公式
+            if content.startswith('\\$') and len(content) == 2:
+                 elements.append(InlineElement(InlineType.TEXT, full_match))
+            else:
+                 elements.append(InlineElement(InlineType.MATH, content))
         
         elif full_match.startswith('<br'):
             # 换行标签 <br> 或 <br/>
@@ -222,34 +232,74 @@ def parse_markdown(text: str) -> List[BlockElement]:
             blocks.append(BlockElement('code_block', '\n'.join(code_lines), language=lang, line_start=start_idx, line_end=i))
             continue
         
-        # 块级公式 $$
-        if line.strip().startswith('$$'):
-            # 使用正则匹配第一个完整公式，处理同一行多个公式的情况
-            single_match = re.match(r'^\$\$(.+?)\$\$', line.strip())
+        # 块级公式 $$ 或 \begin{...} 或 \[...\]
+        stripped_line = line.strip()
+        if stripped_line.startswith('$$') or stripped_line.startswith('\\begin{') or stripped_line.startswith('\\['):
+            # 1. 处理 \begin{...} 环境 (最高优先级，严禁截断)
+            if stripped_line.startswith('\\begin{'):
+                env_match = re.match(r'^\\begin\{([^}*]+)\*?\}', stripped_line)
+                if env_match:
+                    env_name = env_match.group(1)
+                    formula_lines = []
+                    depth = 0
+                    while i < len(lines):
+                        line_content = lines[i]
+                        formula_lines.append(line_content)
+                        # 检查开始标签（含带星号版本）
+                        if f'\\begin{{{env_name}}}' in line_content or f'\\begin{{{env_name}*}}' in line_content:
+                            depth += 1
+                        # 检查结束标签
+                        if f'\\end{{{env_name}}}' in line_content or f'\\end{{{env_name}*}}' in line_content:
+                            depth -= 1
+                            if depth <= 0:
+                                i += 1
+                                break
+                        i += 1
+                    # 关键修复：将 align 等块标记为特定的 math_block_env 类型以便预览区特殊处理
+                    blocks.append(BlockElement('math_block', '\n'.join(formula_lines), language=env_name, line_start=start_idx, line_end=i))
+                    continue
+
+            # 2. 处理 \[ ... \] 环境
+            if stripped_line.startswith('\\['):
+                formula_lines = []
+                while i < len(lines):
+                    line_content = lines[i]
+                    formula_lines.append(line_content)
+                    if '\\]' in line_content:
+                        i += 1
+                        break
+                    i += 1
+                blocks.append(BlockElement('math_block', '\n'.join(formula_lines), line_start=start_idx, line_end=i))
+                continue
+
+            # 3. 处理 $$ 公式
+            # 检查是否是单行 $$公式$$
+            single_match = re.match(r'^\$\$(.+?)\$\$$', stripped_line)
             if single_match:
                 formula = single_match.group(1).strip()
                 blocks.append(BlockElement('math_block', formula, line_start=start_idx, line_end=start_idx))
-                # 检查剩余部分是否还有公式
-                remaining = line.strip()[single_match.end():].strip()
-                if remaining.startswith('$$'):
-                    lines[i] = remaining  # 修改当前行供后续处理
-                else:
-                    i += 1
+                i += 1
                 continue
             
-            # 多行公式（以单独 $$ 开头）
-            formula_lines = []
-            i += 1
-            while i < len(lines) and not lines[i].strip().endswith('$$'):
-                formula_lines.append(lines[i])
+            # 检查是否是多行 $$ 开头
+            if stripped_line == '$$' or stripped_line.startswith('$$'):
+                formula_lines = []
+                # 如果第一行 $$ 后面还有内容
+                if len(stripped_line) > 2:
+                    formula_lines.append(line[line.find('$$')+2:])
+                
                 i += 1
-            if i < len(lines):
-                last = lines[i].strip()
-                if last != '$$':
-                    formula_lines.append(last[:-2])
-            i += 1
-            blocks.append(BlockElement('math_block', '\n'.join(formula_lines), line_start=start_idx, line_end=i))
-            continue
+                while i < len(lines):
+                    if lines[i].strip().endswith('$$'):
+                        last_line = lines[i].strip()
+                        if last_line != '$$':
+                            formula_lines.append(lines[i][:lines[i].find('$$')])
+                        i += 1
+                        break
+                    formula_lines.append(lines[i])
+                    i += 1
+                blocks.append(BlockElement('math_block', '\n'.join(formula_lines), line_start=start_idx, line_end=i))
+                continue
         
         # 标题 #
         if line.startswith('#'):
@@ -337,7 +387,8 @@ def parse_markdown(text: str) -> List[BlockElement]:
         while i < len(lines) and lines[i].strip():
             # 遇到特殊块元素则停止
             if lines[i].startswith('#') or lines[i].strip().startswith('```') or \
-               lines[i].strip().startswith('$$') or lines[i].startswith('>') or \
+               lines[i].strip().startswith('$$') or lines[i].strip().startswith('\\begin{') or \
+               lines[i].strip().startswith('\\[') or lines[i].startswith('>') or \
                re.match(r'^[\s]*[\*\-\+]\s', lines[i]) or re.match(r'^[\s]*\d+\.\s', lines[i]) or \
                re.match(r'^[\s]*[-\*_]{3,}[\s]*$', lines[i]):
                 break

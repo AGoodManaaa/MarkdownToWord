@@ -68,7 +68,7 @@ class CodeFolding:
     def _bind_events(self):
         """绑定事件"""
         self._text.bind('<KeyRelease>', self._on_text_change)
-        self._text.bind('<<Modified>>', self._on_modified)
+        # 移除 <<Modified>> 绑定，改由 gui.py 统一分发驱动，避免竞争
         
         # 双击折叠区域展开
         self._text.tag_bind('folded', '<Double-Button-1>', self._on_fold_double_click)

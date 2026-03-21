@@ -21,7 +21,6 @@ except ImportError:
 
 
 @dataclass
-@dataclass
 class AIConfig:
     """AI 配置"""
     provider: str = "openai"  # openai, deepseek, siliconflow

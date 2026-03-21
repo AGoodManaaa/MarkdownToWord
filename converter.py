@@ -155,14 +155,32 @@ class MarkdownToWordConverter:
         markdown_text = normalize_markdown(markdown_text)  # 规范化格式
         
         # 分割成块并处理
-        blocks = self._split_into_blocks(markdown_text)
+        blocks = parse_markdown(markdown_text)
         try:
-            self._prescan_blocks_for_refs(blocks)
+            # 兼容旧代码：将 BlockElement 转换为 dict 结构，避免大规模重构 _prescan_blocks_for_refs
+            compat_blocks = []
+            for blk in blocks:
+                blk_dict = {'type': blk.type, 'content': blk.content, 'start_line': blk.line_start}
+                # 特殊处理标题
+                if blk.type == 'heading':
+                    blk_dict['type'] = f'heading_{blk.level}'
+                    blk_dict['content'] = {'text': blk.content, 'anchor': None} # parser 目前没解析锚点，保持兼容
+                compat_blocks.append(blk_dict)
+            self._prescan_blocks_for_refs(compat_blocks)
+            blocks_to_process = compat_blocks
         except Exception:
-            pass
-        total = len(blocks)
+            # 如果预扫描失败，仍然使用字典列表
+            blocks_to_process = []
+            for blk in blocks:
+                blk_dict = {'type': blk.type, 'content': blk.content, 'start_line': blk.line_start}
+                if blk.type == 'heading':
+                    blk_dict['type'] = f'heading_{blk.level}'
+                    blk_dict['content'] = {'text': blk.content, 'anchor': None}
+                blocks_to_process.append(blk_dict)
 
-        for idx, blk in enumerate(blocks, start=1):
+        total = len(blocks_to_process)
+
+        for idx, blk in enumerate(blocks_to_process, start=1):
             if cancel_event is not None and getattr(cancel_event, 'is_set', lambda: False)():
                 raise ExportCancelled('导出已取消')
 

@@ -84,8 +84,8 @@ class LineNumberedText(ctk.CTkFrame):
             padx=8,
             pady=5,
             undo=True,
-            autoseparators=True,  # 自动分隔撤销点
-            maxundo=-1,  # 无限撤销
+            autoseparators=False,  # 禁用自动分隔，改为精细的手动控制
+            maxundo=2000,          # 增加撤销深度
             insertbackground=COLORS['text_primary'],
         )
 
@@ -118,9 +118,11 @@ class LineNumberedText(ctk.CTkFrame):
         # 缩进参考线（使用前导空格着色实现）
         self._textbox.tag_configure("indent_guide", foreground=COLORS.get('border', '#d1d5db'))
         
-        # 绑定事件
+        # 建立内容变化的监听
+        self._textbox.bind('<Key>', self._on_key_press)
         self._textbox.bind('<KeyRelease>', self._on_change)
-        self._textbox.bind('<ButtonRelease-1>', self._on_change) # 点击时也更新
+        self._textbox.bind('<FocusOut>', lambda e: self._insert_undo_separator())
+        self._textbox.bind('<ButtonRelease-1>', self._on_click_check)
         self._textbox.bind('<MouseWheel>', self._on_mousewheel)
         self._textbox.bind('<Configure>', self._on_change)
         self.line_numbers.bind('<MouseWheel>', self._on_mousewheel)
@@ -482,6 +484,8 @@ class LineNumberedText(ctk.CTkFrame):
 
     def _on_paste(self, event=None):
         """智能粘贴功能：处理链接、表格、HTML 和剪贴板图片"""
+        # 粘贴前插入分隔符，确保粘贴本身是一个独立的撤销步骤
+        self._insert_undo_separator()
         try:
             # 1. 优先尝试从剪贴板读取图片
             from PIL import ImageGrab
@@ -489,6 +493,7 @@ class LineNumberedText(ctk.CTkFrame):
                 img = ImageGrab.grabclipboard()
                 if img:
                     self._handle_clipboard_image(img)
+                    self._insert_undo_separator() # 粘贴后插入分隔符
                     return "break"
             except Exception:
                 pass
@@ -507,6 +512,7 @@ class LineNumberedText(ctk.CTkFrame):
                     if selected_text:
                         self._textbox.delete(sel_start, sel_end)
                         self._textbox.insert(sel_start, f"[{selected_text}]({clipboard.strip()})")
+                        self._insert_undo_separator() # 粘贴后插入分隔符
                         self._on_change()
                         return "break"
                 except tk.TclError:
@@ -521,6 +527,7 @@ class LineNumberedText(ctk.CTkFrame):
                     if max(col_counts) > 1 and len(set(col_counts)) <= 2:
                         md_table = self._convert_to_md_table(table_rows)
                         self._textbox.insert(tk.INSERT, md_table)
+                        self._insert_undo_separator() # 粘贴后插入分隔符
                         self._on_change()
                         return "break"
 
@@ -531,6 +538,7 @@ class LineNumberedText(ctk.CTkFrame):
                     md_text = self._basic_html_to_md(clipboard)
                     if md_text != clipboard: # 如果转换成功（内容有变化）
                         self._textbox.insert(tk.INSERT, md_text)
+                        self._insert_undo_separator() # 粘贴后插入分隔符
                         self._on_change()
                         if hasattr(self.winfo_toplevel(), 'update_status'):
                             self.winfo_toplevel().update_status("🪄 已自动将粘贴的 HTML 转换为 Markdown", is_temp=True)
@@ -540,6 +548,10 @@ class LineNumberedText(ctk.CTkFrame):
                         
         except Exception:
             pass
+        
+        # 对于普通粘贴，我们也希望它是独立的
+        # 注意：这里不 return "break"，让系统执行默认粘贴逻辑
+        # 默认逻辑执行后，_on_change 里的 500ms 计时器会起作用
         return None
 
     def _basic_html_to_md(self, html_content):
@@ -708,6 +720,73 @@ class LineNumberedText(ctk.CTkFrame):
             
         self._smooth_scroll_timer = self.after(10, lambda: self._smooth_scroll_to(target_pos))
     
+    def get(self, *args, **kwargs):
+        """代理底层 Text 组件的 get 方法"""
+        return self._textbox.get(*args, **kwargs)
+
+    def edit_modified(self, *args, **kwargs):
+        """代理底层 Text 组件的 edit_modified 方法"""
+        return self._textbox.edit_modified(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """代理底层 Text 组件的 delete 方法"""
+        return self._textbox.delete(*args, **kwargs)
+
+    def insert(self, *args, **kwargs):
+        """代理底层 Text 组件的 insert 方法"""
+        return self._textbox.insert(*args, **kwargs)
+
+    def index(self, *args, **kwargs):
+        """代理底层 Text 组件的 index 方法"""
+        return self._textbox.index(*args, **kwargs)
+
+    def see(self, *args, **kwargs):
+        """代理底层 Text 组件的 see 方法"""
+        return self._textbox.see(*args, **kwargs)
+
+    def mark_set(self, *args, **kwargs):
+        """代理底层 Text 组件的 mark_set 方法"""
+        return self._textbox.mark_set(*args, **kwargs)
+
+    def _on_click_check(self, event=None):
+        """点击编辑器时，检查光标位置是否发生大幅移动"""
+        self._on_change(event)
+        try:
+            curr_pos = self._textbox.index(tk.INSERT)
+            last_pos = getattr(self, '_last_cursor_pos', curr_pos)
+            if curr_pos != last_pos:
+                # 只要发生手动点击移动光标，就认为当前编辑意图已结束
+                self._insert_undo_separator()
+                self._last_cursor_pos = curr_pos
+        except:
+            pass
+
+    def _on_key_press(self, event):
+        """按键按下时，极致精细化管理撤销分隔符"""
+        # 1. 字符级逻辑断点：每输入 5 个字符，或者遇到空格、回车、Tab 以及所有中英文标点符号
+        punctuations = (' ', '\r', '\n', '\t', '.', ',', '!', '?', '"', '\'', ';', ':', '(', ')', '[', ']', '{', '}', 
+                        '。', '，', '！', '？', '“', '”', '‘', '’', '；', '：', '（', '）', '【', '】', '、', '—', '…',
+                        '=', '+', '-', '*', '/', '%', '&', '^', '$', '#', '@')
+        
+        # 记录当前字符，用于后续识别
+        char = event.char
+        
+        if event.char in punctuations or self._undo_char_count >= 5:
+            self._insert_undo_separator()
+            self._undo_char_count = 0
+        
+        # 2. 功能键断点：Ctrl+V, Ctrl+X, Ctrl+A 等
+        if event.state & 0x4: # Control mask
+            if event.keysym.lower() in ('v', 'x', 'a'):
+                self._insert_undo_separator()
+
+        # 3. 状态切换断点：从输入切换到删除，或反之
+        current_op = 'delete' if event.keysym in ('BackSpace', 'Delete') else 'insert'
+        last_op = getattr(self, '_last_undo_op', None)
+        if last_op and last_op != current_op:
+            self._insert_undo_separator()
+        self._last_undo_op = current_op
+
     def _on_change(self, event=None):
         """内容变化时更新行号、高亮、参考线、面包屑等"""
         self.after(5, self._update_line_numbers)
@@ -724,16 +803,26 @@ class LineNumberedText(ctk.CTkFrame):
         if self._typewriter_mode:
             self.after(10, self._center_cursor_v2)
 
-        # 让撤销更“一级一级”：对连续输入做轻量防抖后插入 undo 分隔点
+        # 3. 时间断点：500ms 无输入时插入分隔符
         try:
-            if self._undo_sep_timer is not None:
+            if getattr(self, '_undo_sep_timer', None) is not None:
                 self.after_cancel(self._undo_sep_timer)
         except Exception:
             pass
+        
         try:
-            self._undo_sep_timer = self.after(180, self._insert_undo_separator)
+            self._undo_sep_timer = self.after(500, self._insert_undo_separator)
         except Exception:
             self._undo_sep_timer = None
+
+    def _insert_undo_separator(self):
+        """显式插入撤销分隔符"""
+        try:
+            # 只有当 modified 为 True 时才插入分隔符，避免产生空记录
+            self._textbox.edit_separator()
+            self._undo_sep_timer = None
+        except Exception:
+            pass
 
     def _highlight_current_line(self):
         """高亮当前行（移除打字机淡化效果）"""

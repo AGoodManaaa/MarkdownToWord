@@ -125,11 +125,10 @@ def normalize_markdown(md_text: str) -> str:
     规范化 Markdown 文本格式，确保元素之间有适当的空行
     
     主要处理以下问题：
-    1. 标题前后缺少空行（如智谱清言等AI输出）
+    1. 标题前后缺少空行
     2. 代码块前后缺少空行
-    3. 列表、引用等块级元素前后缺少空行
-    4. 表格前后缺少空行
-    5. 清理多余的连续空行
+    3. 块级 LaTeX 公式环境 (\begin{...}) 保护
+    4. 清理多余的连续空行
     """
     # 统一换行符为 \n
     text = md_text.replace('\r\n', '\n').replace('\r', '\n')
@@ -137,44 +136,60 @@ def normalize_markdown(md_text: str) -> str:
     
     result = []
     in_code_block = False
-    in_table = False
-    prev_line_type = 'start'  # start, empty, text, heading, code, table, list, quote, hr
+    in_math_block = False
+    math_env_name = ""
     
     for i, line in enumerate(lines):
-        current_type = _get_line_type(line, in_code_block, in_table)
+        stripped = line.strip()
         
-        # 代码块状态切换
-        if line.startswith('```'):
-            in_code_block = not in_code_block
-        
-        # 表格状态检测
-        if current_type == 'table':
-            in_table = True
-        elif in_table and current_type not in ('table', 'empty'):
-            in_table = False
-        
-        # 决定是否需要在当前行前添加空行
-        need_blank_before = _should_add_blank_line(prev_line_type, current_type)
-        
-        if need_blank_before and result and result[-1].strip():
-            result.append('')
-        
+        # 处理代码块状态
+        if stripped.startswith('```'):
+            if not in_code_block:
+                if result and result[-1].strip():
+                    result.append('')
+                in_code_block = True
+            else:
+                in_code_block = False
+                result.append(line)
+                if i + 1 < len(lines) and lines[i+1].strip():
+                    result.append('')
+                continue
+
+        # 处理 LaTeX 环境块状态
+        if not in_code_block:
+            if stripped.startswith('\\begin{'):
+                match = re.match(r'\\begin\{([^}*]+)\*?\}', stripped)
+                if match:
+                    if result and result[-1].strip():
+                        result.append('')
+                    in_math_block = True
+                    math_env_name = match.group(1)
+            elif in_math_block and (f'\\end{{{math_env_name}}}' in stripped or f'\\end{{{math_env_name}*}}' in stripped):
+                in_math_block = False
+                result.append(line)
+                if i + 1 < len(lines) and lines[i+1].strip():
+                    result.append('')
+                continue
+
+        # 如果在块中，不进行额外处理，直接添加
+        if in_code_block or in_math_block:
+            result.append(line)
+            continue
+
+        # 标题处理
+        if stripped.startswith('#'):
+            if result and result[-1].strip():
+                result.append('')
+            result.append(line)
+            if i + 1 < len(lines) and lines[i+1].strip():
+                result.append('')
+            continue
+
         result.append(line)
-        
-        # 决定是否需要在当前行后添加空行
-        need_blank_after = _should_add_blank_after(current_type, i, lines)
-        
-        if need_blank_after and i + 1 < len(lines) and lines[i + 1].strip():
-            result.append('')
-        
-        # 更新前一行类型
-        prev_line_type = current_type if line.strip() else 'empty'
     
     text = '\n'.join(result)
-    
-    # 清理多余的连续空行（超过2个连续换行符压缩为2个）
+    # 清理多余的连续空行
     text = re.sub(r'\n{3,}', '\n\n', text)
-    
     return text
 
 
@@ -213,7 +228,7 @@ def _get_line_type(line: str, in_code_block: bool, in_table: bool) -> str:
         return 'list'
     
     # 块级公式
-    if stripped.startswith('$$'):
+    if stripped.startswith('$$') or stripped.startswith('\\begin{') or stripped.startswith('\\['):
         return 'math'
     
     # 引用
@@ -369,19 +384,23 @@ def is_valid_math_formula(formula: str) -> bool:
     if not formula:
         return False
     
+    # 包含 LaTeX 环境块
+    if formula.startswith('\\begin{') or formula.endswith('}'):
+        return True
+
     # 包含LaTeX命令的一定是公式
     if '\\' in formula:
         return True
     
     # 包含数学运算符的是公式
     math_operators = ['+', '-', '*', '/', '=', '<', '>', '^', '_', '{', '}', 
-                      '×', '÷', '±', '∞', '∑', '∫', '∏', '√']
+                      '×', '÷', '±', '∞', '∑', '∫', '∏', '√', '≤', '≥', '≠', '≈']
     if any(op in formula for op in math_operators):
         return True
     
     # 包含希腊字母的是公式
-    greek_letters = 'αβγδεζηθικλμνξπρστυφχψω'
-    if any(c in greek_letters for c in formula.lower()):
+    greek_letters = 'αβγδεζηθικλμνξπρστυφχψωΓΔΘΛΞΠΣΦΨΩ'
+    if any(c in greek_letters for c in formula):
         return True
     
     # 单个或多个拉丁字母变量是有效公式（如 r, x, y, Cin, Cout）
@@ -392,19 +411,25 @@ def is_valid_math_formula(formula: str) -> bool:
     if re.search(r'[a-zA-Z]\d|\d[a-zA-Z]', formula):
         return True
     
-    # 纯数字是有效公式（如常数）
-    if re.match(r'^\d+(\.\d+)?$', formula):
+    # 纯数字且较长或带有科学计数法可能是公式
+    if re.match(r'^\d+(\.\d+)?([eE][+-]?\d+)?$', formula):
         return True
     
     # 如果是普通文字（包含空格、标点符号或中文字符），则不是公式
     # 检查是否包含中文字符或常见标点
     if re.search(r'[\u4e00-\u9fff]', formula):  # 包含中文
         return False
-    if re.search(r'[,.，。!?;:]', formula):  # 包含标点符号
+    
+    # 如果包含空格但没有任何数学特征，可能是金额或其他文本
+    if ' ' in formula and not any(c in formula for c in ['+', '-', '=', '<', '>', '\\', '^', '_']):
         return False
-    if ' ' in formula and not any(c in formula for c in ['+', '-', '=', '<', '>']):
-        # 包含空格但不是数学表达式
+
+    # 排除常见的非公式场景，如美元金额 $100
+    if re.match(r'^\d+$', formula):
         return False
     
-    # 其他情况默认不是公式
+    # 默认尝试作为公式处理，如果不包含中文且较短
+    if len(formula) < 50 and not re.search(r'[\u4e00-\u9fff]', formula):
+        return True
+
     return False

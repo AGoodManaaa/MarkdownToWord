@@ -47,6 +47,15 @@ class MarkdownPreview(ctk.CTkFrame):
 
         # App 引用：用于“复制到 Word”
         self.app = app
+        self._performance_mode = "normal"
+        self._render_batch_size = 24
+        self._render_batch_delay_ms = 1
+        self._render_token = 0
+        self._pending_markdown_text = None
+        self._last_requested_markdown = None
+        self._last_rendered_markdown = None
+        self._last_parsed_markdown = None
+        self._last_parsed_blocks = None
         
         # 是否正在更新（防止循环触发）
         self._updating = False
@@ -196,13 +205,15 @@ class MarkdownPreview(ctk.CTkFrame):
         """窗口尺寸变化时，动态调整缩放比例并平滑重渲染"""
         try:
             new_scale = max(0.8, min(1.6, event.width / float(self._base_width)))
-            if abs(new_scale - self._scale) < 0.03:
+            min_delta = 0.08 if self._performance_mode == "high" else 0.03
+            if abs(new_scale - self._scale) < min_delta:
                 return
             self._scale = new_scale
             # 防抖重渲染
             if self._resize_timer:
                 self.after_cancel(self._resize_timer)
-            self._resize_timer = self.after(120, self._rerender_after_resize)
+            delay = 220 if self._performance_mode == "high" else 120
+            self._resize_timer = self.after(delay, self._rerender_after_resize)
         except Exception:
             pass
     
@@ -850,10 +861,18 @@ class MarkdownPreview(ctk.CTkFrame):
 
         # 隐藏公式 token（token 仍会被 Text.get() 取到，用于回写 Markdown）
         try:
-            self.text.tag_configure('math_token', elide=True)
+            # 同时使用 elide 和极小字号 + 背景色隐藏，确保在各种环境下都不留痕迹
+            self.text.tag_configure('math_token', 
+                elide=True, 
+                font=('TkDefaultFont', 1), 
+                foreground=self.text.cget('bg')
+            )
         except Exception:
             try:
-                self.text.tag_configure('math_token', foreground=self.text.cget('bg'))
+                self.text.tag_configure('math_token', 
+                    font=('TkDefaultFont', 1),
+                    foreground=self.text.cget('bg')
+                )
             except Exception:
                 pass
         
@@ -885,38 +904,56 @@ class MarkdownPreview(ctk.CTkFrame):
         """获取可用的数学字体，按优先级尝试"""
         import tkinter.font as tkfont
         available = set(tkfont.families())
-        # 按优先级尝试数学字体
-        for font in ['Cambria Math', 'STIX Two Math', 'Latin Modern Math', 'Times New Roman', 'SimSun']:
-            if font in available:
-                return font
-        return 'TkDefaultFont'
+        # 优先级：Cambria Math (Office 原生), STIX Two Math, Times New Roman (通用), 
+        # Linux Libertine, DejaVu Serif (常用替代)
+        math_fonts = [
+            'Cambria Math', 'STIX Two Math', 'Latin Modern Math', 
+            'Cambria', 'Times New Roman', 'Liberation Serif',
+            'DejaVu Serif', 'SimSun', 'Microsoft YaHei'
+        ]
+        
+        for f in math_fonts:
+            if f in available:
+                return f
+        return 'serif'
     
     def update_preview(self, markdown_text: str):
-        """更新预览内容 - 异步版"""
+        """?????? - ???"""
         import threading
-        
-        # 如果当前已经在渲染，则不再触发新的（由防抖控制频率）
-        if getattr(self, '_is_rendering', False):
+
+        if markdown_text == self._last_rendered_markdown and not getattr(self, '_is_rendering', False):
             return
-            
-        # 启动渲染时显示动画反馈
+
+        self._last_requested_markdown = markdown_text
+
+        if getattr(self, '_is_rendering', False):
+            self._pending_markdown_text = markdown_text
+            return
+
+        self._render_token += 1
+        render_token = self._render_token
+        self._pending_markdown_text = None
+
         self._start_render_animation()
-            
+
         def _render_task():
             self._is_rendering = True
             try:
-                # 预处理和解析在子线程完成
-                processed_text = convert_latex_delimiters(markdown_text)
-                processed_text = normalize_markdown(processed_text)
-                blocks = parse_markdown(processed_text)
-                
-                # 回到主线程更新 UI
-                self.after(0, lambda: self._apply_render_result(blocks))
+                if markdown_text == self._last_parsed_markdown and self._last_parsed_blocks is not None:
+                    blocks = self._last_parsed_blocks
+                else:
+                    processed_text = convert_latex_delimiters(markdown_text)
+                    processed_text = normalize_markdown(processed_text)
+                    blocks = parse_markdown(processed_text)
+                    self._last_parsed_markdown = markdown_text
+                    self._last_parsed_blocks = blocks
+
+                self.after(0, lambda: self._apply_render_result(render_token, blocks, markdown_text))
             except Exception as e:
                 print(f"Render error: {e}")
-                self._is_rendering = False
                 self.after(0, lambda: self._set_preview_error())
-        
+                self.after(0, lambda: self._finish_render(None))
+
         threading.Thread(target=_render_task, daemon=True).start()
 
     def _start_render_animation(self):
@@ -940,43 +977,68 @@ class MarkdownPreview(ctk.CTkFrame):
         
         self.after(200, lambda: self._step_render_animation(step + 1))
 
-    def _apply_render_result(self, blocks):
-        """主线程应用渲染结果"""
+    def _apply_render_result(self, render_token, blocks, markdown_text):
+        """?????????"""
         try:
-            # 预览区默认只读：渲染时临时解锁写入，写完再恢复只读
-            self.text.configure(state='normal')
-            self.text.delete('1.0', 'end')
-            
-            # 清除旧数据
-            self.math_images = []
-            self.equation_counter = 0
-            self._math_token_counter = 0
-            self._math_token_map = {}
-            self._headings = []
-            self._footnotes = {} # 重置脚注
-            self._anchor_map = {} # heading_id -> text_index
-            
-            # 记录当前滚动比例，缩放/重渲染后恢复
+            if render_token != self._render_token:
+                self._finish_render(None)
+                return
+
             try:
                 self._pending_scroll_ratio = self.text.yview()[0]
             except Exception:
                 self._pending_scroll_ratio = None
 
-            # 1. 第一遍扫描，提取脚注定义和标题
+            self.text.configure(state='normal')
+            self.text.delete('1.0', 'end')
+
+            self.math_images = []
+            self.equation_counter = 0
+            self._math_token_counter = 0
+            self._math_token_map = {}
+            self._headings = []
+            self._footnotes = {}
+            self._anchor_map = {}
+
             for block in blocks:
                 if block.type == 'heading':
-                    # 生成简单的 ID (去掉空格，转小写)
                     anchor_id = re.sub(r'[^\w-]', '', block.content.lower().replace(' ', '-'))
                     self._headings.append((block.level, block.content, block.line_start, anchor_id))
                 elif block.type == 'footnote_def':
                     self._footnotes[block.language] = block.content
 
-            # 2. 第二遍扫描，正式渲染
-            for block in blocks:
-                if block.type != 'footnote_def': # 脚注定义通常不直接显示在正文位置
-                    self._render_block(block)
+            render_blocks = [block for block in blocks if block.type != 'footnote_def']
+            self._render_blocks_in_batches(render_token, render_blocks, 0, markdown_text)
+        except Exception as e:
+            print(f"Apply render error: {e}")
+            self._set_preview_error()
+            self._finish_render(None)
 
-            # 3. 在文末追加脚注（如果有）
+    def _render_blocks_in_batches(self, render_token, blocks, start_index, markdown_text):
+        try:
+            if render_token != self._render_token:
+                self._finish_render(None)
+                return
+
+            end_index = min(start_index + self._render_batch_size, len(blocks))
+            for block in blocks[start_index:end_index]:
+                self._render_block(block)
+
+            if end_index < len(blocks):
+                self.after(
+                    self._render_batch_delay_ms,
+                    lambda: self._render_blocks_in_batches(render_token, blocks, end_index, markdown_text),
+                )
+                return
+
+            self._finalize_render(markdown_text)
+        except Exception as e:
+            print(f"Batch render error: {e}")
+            self._set_preview_error()
+            self._finish_render(None)
+
+    def _finalize_render(self, markdown_text: str):
+        try:
             if self._footnotes:
                 self.text.insert('end', '\n' + '─' * 20 + '\n', ('body',))
                 for ref, content in self._footnotes.items():
@@ -986,8 +1048,7 @@ class MarkdownPreview(ctk.CTkFrame):
 
             if bool(getattr(self, '_readonly', False)):
                 self.text.configure(state='disabled')
-            
-            # 恢复滚动位置
+
             try:
                 if self._pending_scroll_ratio is not None:
                     self.text.yview_moveto(self._pending_scroll_ratio)
@@ -996,14 +1057,29 @@ class MarkdownPreview(ctk.CTkFrame):
             finally:
                 self._pending_scroll_ratio = None
 
-            # 更新浮动大纲
             if self._toc_visible:
                 self._update_floating_toc_content()
-        except Exception as e:
-            print(f"Apply render error: {e}")
-            self._set_preview_error()
+
+            self._last_rendered_markdown = markdown_text
         finally:
-            self._is_rendering = False
+            self._finish_render(markdown_text)
+
+    def _finish_render(self, markdown_text):
+        self._is_rendering = False
+        pending = self._pending_markdown_text
+        self._pending_markdown_text = None
+        if pending and pending != markdown_text:
+            self.after(0, lambda: self.update_preview(pending))
+
+    def set_performance_mode(self, mode: str):
+        mode = 'high' if str(mode).lower() == 'high' else 'normal'
+        self._performance_mode = mode
+        if mode == 'high':
+            self._render_batch_size = 6
+            self._render_batch_delay_ms = 2
+        else:
+            self._render_batch_size = 24
+            self._render_batch_delay_ms = 1
 
     def _render_block(self, block):
         """渲染块级元素"""
@@ -1017,7 +1093,7 @@ class MarkdownPreview(ctk.CTkFrame):
             self._insert_code_block(block.content, block.language)
         
         elif block.type == 'math_block':
-            self._insert_math_block(block.content)
+            self._insert_math_block(block.content, env_name=block.language)
         
         elif block.type == 'table':
             self._insert_table(block.content)
@@ -1191,78 +1267,56 @@ class MarkdownPreview(ctk.CTkFrame):
             self.app.update_status("✅ 代码已复制到剪贴板")
     
     def _render_latex(self, latex: str, fontsize: int = 16, is_inline: bool = False) -> ImageTk.PhotoImage:
-        """使用 matplotlib.mathtext 渲染 LaTeX 公式为图片。
-
-        渲染失败时返回 None，由调用方回退为纯文本显示。
-        """
+        """使用 matplotlib.mathtext 渲染 LaTeX 公式为图片。"""
         try:
-            # 使用 Computer Modern 数学字体族，效果接近 LaTeX/Word 公式
             plt.rcParams['mathtext.fontset'] = 'cm'
-            plt.rcParams['mathtext.rm'] = 'serif'
-            plt.rcParams['mathtext.it'] = 'serif:italic'
-            plt.rcParams['mathtext.bf'] = 'serif:bold'
-
-            fig, ax = plt.subplots(figsize=(0.01, 0.01))
-            ax.axis('off')
-
-            # 行内公式略小，块级公式略大，以匹配正文 16pt 的视觉大小
-            # 应用缩放比例
-            scale = getattr(self, '_scale', 1.0)
-            base_fontsize = 12 if is_inline else 14  # 与正文 16pt 匹配
-            render_fontsize = int(base_fontsize * scale)
-
             formula = (latex or '').strip()
-            # 兼容 $...$/$$...$$ 包裹：先剥离，避免变成 $$...$$ 导致解析失败
-            if formula.startswith('$$') and formula.endswith('$$') and len(formula) >= 4:
+            
+            # 1. 处理常见的不受 matplotlib 支持的环境块
+            if '\\begin{' in formula:
+                # 特殊处理 align 环境：将其转换为单行显示
+                if 'align' in formula:
+                    formula = re.sub(r'\\begin\{align\*?\}', '', formula)
+                    formula = re.sub(r'\\end\{align\*?\}', '', formula)
+                    formula = formula.replace('&', ' ')
+                    formula = formula.replace('\\\\', ' \\quad ')
+                else:
+                    formula = re.sub(r'\\begin\{[a-z*]+\}', '', formula)
+                    formula = re.sub(r'\\end\{[a-z*]+\}', '', formula)
+                    formula = formula.replace('&', ' ')
+            
+            # 2. 清理多余的 $ 符号
+            if formula.startswith('$$') and formula.endswith('$$'):
                 formula = formula[2:-2].strip()
-            elif formula.startswith('$') and formula.endswith('$') and len(formula) >= 2:
+            elif formula.startswith('$') and formula.endswith('$'):
                 formula = formula[1:-1].strip()
-
-            # 兼容示例中双反斜杠（\int），渲染时归一为 \int
-            try:
-                formula = formula.replace('\\\\', '\\')
-            except Exception:
-                pass
-
+            
             if not formula:
                 return None
 
-            text = ax.text(
-                0.5,
-                0.5,
-                f'${formula}$',
-                fontsize=render_fontsize,
-                ha='center',
-                va='center',
-                transform=ax.transAxes,
-                color='#1a1a2e',
-            )
+            fig, ax = plt.subplots(figsize=(0.01, 0.01))
+            ax.axis('off')
+            scale = getattr(self, '_scale', 1.0)
+            base_fontsize = 12 if is_inline else 14
+            render_fontsize = int(base_fontsize * scale)
+
+            text = ax.text(0.5, 0.5, f'${formula}$', fontsize=render_fontsize,
+                          ha='center', va='center', transform=ax.transAxes, color='#1a1a2e')
 
             fig.canvas.draw()
             bbox = text.get_window_extent(fig.canvas.get_renderer())
-            bbox = bbox.expanded(1.05, 1.10)
+            bbox = bbox.expanded(1.1, 1.2)
             fig.set_size_inches(bbox.width / fig.dpi, bbox.height / fig.dpi)
 
             buf = BytesIO()
-            fig.savefig(
-                buf,
-                format='png',
-                bbox_inches='tight',
-                pad_inches=0.02,
-                dpi=120,  # 固定 DPI，缩放只通过 fontsize 控制
-                transparent=True,
-            )
+            fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.05, dpi=120, transparent=True)
             plt.close(fig)
-
             buf.seek(0)
-            img = Image.open(buf)
-            return ImageTk.PhotoImage(img)
-        except Exception as e:
-            # 失败时在控制台输出原因，预览中由调用方回退为文本
-            print(f"[math render error] {e}")
+            return ImageTk.PhotoImage(Image.open(buf))
+        except Exception:
             return None
 
-    def _insert_math_block(self, formula: str):
+    def _insert_math_block(self, formula: str, env_name: str = ""):
         """插入块级公式：居中显示，右侧编号"""
         self.equation_counter += 1
         formula_text = formula.strip()
@@ -1270,7 +1324,15 @@ class MarkdownPreview(ctk.CTkFrame):
         if not formula_text:
             return
         
-        # 尝试渲染简单公式为图片
+        # 预清理：剥离多余的定界符
+        if formula_text.startswith('$$') and formula_text.endswith('$$'):
+            formula_text = formula_text[2:-2].strip()
+        elif formula_text.startswith('$') and formula_text.endswith('$'):
+            formula_text = formula_text[1:-1].strip()
+        elif formula_text.startswith('\\[') and formula_text.endswith('\\]'):
+            formula_text = formula_text[2:-2].strip()
+
+        # 尝试渲染公式为图片
         img = self._render_latex(formula_text, is_inline=False)
         
         self.text.insert('end', '\n')
@@ -1288,10 +1350,29 @@ class MarkdownPreview(ctk.CTkFrame):
                 pass
             self.text.insert('end', f'    ({self.equation_counter})\n')
         else:
-            # 直接插入文本，使用 math_block 标签居中
-            display = f'    {formula_text}    ({self.equation_counter})'
-            self.text.insert('end', display, ('math_block',))
-            self.text.insert('end', '\n')
+            # 渲染失败回退：针对 align 环境进行视觉优化
+            self.text.insert('end', '          ', ('math_block',))
+            
+            display_text = formula_text
+            # 如果是特定的数学环境，进行格式化
+            if env_name or '\\begin{' in display_text:
+                # 仅移除外层包装标签
+                display_text = re.sub(r'\\begin\{[a-z*]+\}', '', display_text)
+                display_text = re.sub(r'\\end\{[a-z*]+\}', '', display_text)
+                # 处理对齐符号 & 替换为空格
+                display_text = display_text.replace('&', ' ')
+                # 处理 \\ 换行符，确保在 Text 组件中产生真实换行，并应用居中标签
+                lines = display_text.split('\\\\')
+                for idx, line in enumerate(lines):
+                    line_content = line.strip()
+                    if not line_content: continue
+                    self.text.insert('end', line_content, ('math', 'math_block'))
+                    if idx < len(lines) - 1:
+                        self.text.insert('end', '\n          ', ('math_block',))
+            else:
+                self.text.insert('end', display_text.strip(), ('math', 'math_block'))
+            
+            self.text.insert('end', f'    ({self.equation_counter})\n', ('math_block',))
         
         self.text.insert('end', '\n')
     
@@ -1913,11 +1994,17 @@ class MarkdownPreview(ctk.CTkFrame):
         current_pos = self.text.yview()[0]
         increment = 0.02 * delta
         target_pos = max(0.0, min(1.0, current_pos + increment))
+        if self._performance_mode == 'high':
+            self.text.yview_moveto(target_pos)
+            return "break"
         self._smooth_scroll_to(target_pos)
         return "break"
 
     def _smooth_scroll_to(self, target_pos):
         """执行预览区平滑滚动动画（减小抖动）"""
+        if self._performance_mode == 'high':
+            self.text.yview_moveto(target_pos)
+            return
         if self._smooth_scroll_timer:
             self.after_cancel(self._smooth_scroll_timer)
         current_pos = self.text.yview()[0]
@@ -1950,7 +2037,8 @@ class MarkdownPreview(ctk.CTkFrame):
         
         # 2. 更新大纲追踪高亮
         if self._toc_visible:
-            self.after(50, self._track_current_heading)
+            delay = 160 if self._performance_mode == 'high' else 50
+            self.after(delay, self._track_current_heading)
             
         # 3. 更新阅读进度条
         self._update_reading_progress(float(first))

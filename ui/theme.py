@@ -195,6 +195,8 @@ DEFAULT_CONFIG = {
     'recent_files': [],
     'font_size': 14,
     'theme': 'light',
+    'product_mode': 'converter',
+    'show_advanced_toolbar': False,
     'sidebar_visible': True,
     'sidebar_width': 250,
     'window_geometries': {},
@@ -208,6 +210,10 @@ DEFAULT_CONFIG = {
     'last_export_style': 'standard',
     'last_export_page_size': 'a4',
     'preflight_check_remote_images': False,
+    'performance_mode': 'auto',
+    'large_doc_line_threshold': 800,
+    'large_doc_char_threshold': 30000,
+    'large_doc_image_threshold': 20,
 
     # 导出选项
     'export_toc_enabled': False,
@@ -233,6 +239,9 @@ def load_config() -> dict:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 config = json.load(f)
                 merged = {**default_config, **config}
+                merged['theme'] = 'light'
+                merged.pop('custom_theme', None)
+                merged['preview_theme'] = 'github'
                 try:
                     if isinstance(config.get('export_style'), dict):
                         merged['export_style'] = {**default_config.get('export_style', {}), **config.get('export_style', {})}

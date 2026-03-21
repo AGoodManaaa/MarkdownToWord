@@ -322,42 +322,74 @@ class MathHandler:
         self.equation_counter = 0
     
     def add_block_equation(self, doc: Document, latex: str, numbered: bool = True) -> None:
-        """添加块级公式（公式居中，序号靠右）- 使用制表位实现"""
-        para = doc.add_paragraph()
+        """添加块级公式（支持 align 等多行环境）"""
+        # 预处理 LaTeX 内容
+        formula = latex.strip()
+        if formula.startswith('$$') and formula.endswith('$$'):
+            formula = formula[2:-2].strip()
+        elif formula.startswith('\\[') and formula.endswith('\\]'):
+            formula = formula[2:-2].strip()
+
+        # 检查是否包含 align 等环境
+        is_align = '\\begin{align' in formula
         
-        # 设置制表位：居中制表位在页面中间，右对齐制表位在右边
-        # A4页面可用宽度约6.27英寸
-        pPr = para._p.get_or_add_pPr()
-        tabs = OxmlElement('w:tabs')
-        
-        # 居中制表位 (页面中间 = 3.135英寸 ≈ 4478 twips，1英寸=1440 twips)
-        tab_center = OxmlElement('w:tab')
-        tab_center.set(qn('w:val'), 'center')
-        tab_center.set(qn('w:pos'), '4478')
-        tabs.append(tab_center)
-        
-        # 右对齐制表位 (页面右边 = 6.27英寸 ≈ 9029 twips)
-        tab_right = OxmlElement('w:tab')
-        tab_right.set(qn('w:val'), 'right')
-        tab_right.set(qn('w:pos'), '9029')
-        tabs.append(tab_right)
-        
-        pPr.append(tabs)
-        
-        # 添加Tab到中间，插入公式
-        para.add_run('\t')
-        try:
-            self._insert_math(para, latex)
-        except (ValueError, etree.XMLSyntaxError):
-            run = para.add_run(latex)
-            run.font.italic = True
-        
-        # 添加Tab到右边，插入序号
-        if numbered:
-            self.equation_counter += 1
-            para.add_run('\t')
-            run = para.add_run(f"({self.equation_counter})")
-            run.font.size = FONT_SIZES['xiao_si']
+        if is_align:
+            # Word 原生公式处理 align 比较复杂，通常需要将每行提取出来作为独立公式
+            # 或者使用特定的矩阵/堆栈结构。这里我们采用逐行添加的方式以保证 100% 成功率。
+            # 移除环境标签
+            core_content = re.sub(r'\\begin\{align\*?\}', '', formula)
+            core_content = re.sub(r'\\end\{align\*?\}', '', core_content)
+            # 按 \\ 拆分行
+            lines = [l.strip() for l in core_content.split('\\\\') if l.strip()]
+            
+            for idx, line in enumerate(lines):
+                # 对齐符号 & 在单行公式中无意义，移除
+                clean_line = line.replace('&', '')
+                para = doc.add_paragraph()
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                try:
+                    # 尝试转换为原生公式
+                    mathml = latex_to_mathml(clean_line)
+                    omml = self._mathml_to_omml(mathml)
+                    if omml is not None:
+                        oMathPara = OxmlElement('m:oMathPara')
+                        oMathPara.append(omml)
+                        para._p.append(oMathPara)
+                    else:
+                        run = para.add_run(clean_line)
+                        run.font.italic = True
+                except Exception:
+                    run = para.add_run(clean_line)
+                    run.font.italic = True
+                
+                # 仅在最后一行添加编号
+                if numbered and idx == len(lines) - 1:
+                    self.equation_counter += 1
+                    run = para.add_run(f"\t({self.equation_counter})")
+                    run.font.size = FONT_SIZES.get('xiao_si', Pt(12))
+        else:
+            # 普通块级公式处理
+            para = doc.add_paragraph()
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            try:
+                mathml = latex_to_mathml(formula)
+                oMath = self._mathml_to_omml(mathml)
+                if oMath is not None:
+                    oMathPara = OxmlElement('m:oMathPara')
+                    oMathPara.append(oMath)
+                    para._p.append(oMathPara)
+                else:
+                    run = para.add_run(formula)
+                    run.font.italic = True
+            except Exception:
+                run = para.add_run(formula)
+                run.font.italic = True
+            
+            if numbered:
+                self.equation_counter += 1
+                run = para.add_run(f"\t({self.equation_counter})")
+                run.font.size = FONT_SIZES.get('xiao_si', Pt(12))
     
     def add_inline_equation(self, paragraph, latex: str) -> None:
         """添加行内公式"""
@@ -499,25 +531,20 @@ class MathHandler:
             if len(children) >= 3:
                 self._convert_mathml_element(children[2], sup)
         
-        elif tag == 'mtable':
-            # 表格/矩阵（用于aligned环境）
-            m = etree.SubElement(parent, f'{{{ns}}}m')
-            mPr = etree.SubElement(m, f'{{{ns}}}mPr')
+        elif tag == 'munder':
+            # 下标记 (如 \lim_{x \to 0})
+            limLow = etree.SubElement(parent, f'{{{ns}}}limLow')
+            e = etree.SubElement(limLow, f'{{{ns}}}e')
+            lim = etree.SubElement(limLow, f'{{{ns}}}lim')
             
-            # 处理每一行
-            for row_elem in mathml_elem:
-                mr = etree.SubElement(m, f'{{{ns}}}mr')
-                row_tag = row_elem.tag.split('}')[-1] if '}' in row_elem.tag else row_elem.tag
-                if row_tag == 'mtr':
-                    for cell_elem in row_elem:
-                        cell_tag = cell_elem.tag.split('}')[-1] if '}' in cell_elem.tag else cell_elem.tag
-                        if cell_tag == 'mtd':
-                            e = etree.SubElement(mr, f'{{{ns}}}e')
-                            for child in cell_elem:
-                                self._convert_mathml_element(child, e)
-        
+            children = list(mathml_elem)
+            if len(children) >= 1:
+                self._convert_mathml_element(children[0], e)
+            if len(children) >= 2:
+                self._convert_mathml_element(children[1], lim)
+
         elif tag == 'mover':
-            # 上划线/帽子
+            # 上标记 (如 \overline 或 \hat)
             acc = etree.SubElement(parent, f'{{{ns}}}acc')
             accPr = etree.SubElement(acc, f'{{{ns}}}accPr')
             e = etree.SubElement(acc, f'{{{ns}}}e')
@@ -525,18 +552,12 @@ class MathHandler:
             children = list(mathml_elem)
             if len(children) >= 1:
                 self._convert_mathml_element(children[0], e)
-            # 处理上标符号
             if len(children) >= 2 and children[1].text:
                 chr_elem = etree.SubElement(accPr, f'{{{ns}}}chr')
                 chr_elem.set(f'{{{ns}}}val', children[1].text)
         
-        elif tag == 'munder':
-            # 下标记
-            for child in mathml_elem:
-                self._convert_mathml_element(child, parent)
-        
         elif tag == 'munderover':
-            # 上下标记（如求和符号）
+            # 上下标记（如求和符号、积分范围）
             nary = etree.SubElement(parent, f'{{{ns}}}nary')
             naryPr = etree.SubElement(nary, f'{{{ns}}}naryPr')
             sub = etree.SubElement(nary, f'{{{ns}}}sub')
@@ -545,14 +566,33 @@ class MathHandler:
             
             children = list(mathml_elem)
             if len(children) >= 1:
-                # 第一个是操作符
                 if children[0].text:
                     chr_elem = etree.SubElement(naryPr, f'{{{ns}}}chr')
                     chr_elem.set(f'{{{ns}}}val', self._decode_text(children[0].text))
+                else:
+                    self._convert_mathml_element(children[0], e)
             if len(children) >= 2:
                 self._convert_mathml_element(children[1], sub)
             if len(children) >= 3:
                 self._convert_mathml_element(children[2], sup)
+        
+        elif tag == 'mtable':
+            # 矩阵或多行对齐
+            m = etree.SubElement(parent, f'{{{ns}}}m')
+            for row_elem in mathml_elem:
+                if row_elem.tag.endswith('mtr'):
+                    mr = etree.SubElement(m, f'{{{ns}}}mr')
+                    for cell_elem in row_elem:
+                        if cell_elem.tag.endswith('mtd'):
+                            e = etree.SubElement(mr, f'{{{ns}}}e')
+                            for child in cell_elem:
+                                self._convert_mathml_element(child, e)
+
+        elif tag == 'menclose':
+            # 封闭结构 (如 \cancel, \longdiv)
+            # Word 中没有直接对应的 menclose，通常转换为普通容器
+            for child in mathml_elem:
+                self._convert_mathml_element(child, parent)
         
         elif tag == 'mtext':
             # 文本
@@ -599,24 +639,55 @@ class CodeHandler:
     """代码块处理器"""
     
     def add_code_block(self, doc: Document, code: str, language: str = None) -> None:
-        """添加代码块"""
-        # 添加语言标识（如果有）
+        """添加代码块（美化版：灰色背景，Consolas 字体，细边框）"""
+        # 1. 添加语言标识
         if language:
             lang_para = doc.add_paragraph()
-            lang_run = lang_para.add_run(f"代码 ({language}):")
-            lang_run.font.size = FONT_SIZES['caption']
+            lang_run = lang_para.add_run(f" 代码 [{language}]")
+            lang_run.font.size = Pt(9)
             lang_run.font.bold = True
+            lang_run.font.color.rgb = RGBColor(107, 114, 128)  # 灰色
         
-        # 添加代码内容
+        # 2. 逐行处理代码内容
         lines = code.split('\n')
         for line in lines:
-            para = doc.add_paragraph(style='Code Block')
-            run = para.add_run(line)
-            run.font.name = FONTS['mono']
-            run.font.size = FONT_SIZES['code']
+            para = doc.add_paragraph()
+            # 模拟代码块缩进
+            para.paragraph_format.left_indent = Cm(0.5)
+            para.paragraph_format.space_before = Pt(0)
+            para.paragraph_format.space_after = Pt(0)
+            para.paragraph_format.line_spacing = 1.0
             
-            # 设置背景色
-            self._set_paragraph_shading(para, 'F5F5F5')
+            run = para.add_run(line)
+            # 使用 Consolas 或 Courier New
+            run.font.name = 'Consolas'
+            # 强制应用西文字体
+            run._element.rPr.rFonts.set(qn('w:ascii'), 'Consolas')
+            run._element.rPr.rFonts.set(qn('w:hAnsi'), 'Consolas')
+            
+            run.font.size = Pt(9.5)
+            run.font.color.rgb = RGBColor(31, 41, 55)  # 深灰
+            
+            # 3. 设置背景阴影 (w:shd)
+            pPr = para._p.get_or_add_pPr()
+            shd = OxmlElement('w:shd')
+            shd.set(qn('w:fill'), 'F9FAFB')  # 浅灰背景
+            shd.set(qn('w:val'), 'clear')
+            pPr.append(shd)
+            
+            # 4. 设置边框 (w:pBdr)
+            pBdr = OxmlElement('w:pBdr')
+            for border_name in ['top', 'left', 'bottom', 'right']:
+                border = OxmlElement(f'w:{border_name}')
+                border.set(qn('w:val'), 'single')
+                border.set(qn('w:sz'), '2')  # 0.25pt
+                border.set(qn('w:space'), '1')
+                border.set(qn('w:color'), 'E5E7EB')
+                pBdr.append(border)
+            pPr.append(pBdr)
+        
+        # 5. 代码块后添加一点空隙
+        doc.add_paragraph().paragraph_format.space_before = Pt(6)
     
     def add_inline_code(self, paragraph, code: str) -> None:
         """添加行内代码"""

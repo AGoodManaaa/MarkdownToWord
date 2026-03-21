@@ -152,7 +152,7 @@ class HeaderBuilder:
     
     def _get_tool_definitions(self):
         """获取工具按钮定义。"""
-        return [
+        tools = [
             ("📂", "打开", self.app.open_file, "Ctrl+O"),
             ("💾", "保存", self.app.save_file, "Ctrl+S"),
             ("✦", "规范化", self.app.format_markdown, "Ctrl+Shift+F"),
@@ -160,14 +160,18 @@ class HeaderBuilder:
             ("👁", "预览", self.app.toggle_preview, "Ctrl+P"),
             ("📤", "导出", self.app.export_to_word, "Ctrl+Shift+S"),
             ("📄", "PDF", self.app.export_to_pdf, ""),
-            ("🤖", "AI助手", self.app.show_ai_assistant, "Ctrl+I"),
             ("📦", "批量导出", self.app.show_batch_export, "Ctrl+B"),
-            ("📊", "图表", self.app.show_chart_editor, "Ctrl+G"),
-            ("🧠", "导图", self.app.show_mindmap, "Ctrl+T"),
-            ("📑", "文献", self.app.show_bibliography, "Ctrl+R"),
-            ("🔄", "版本", self.app.show_version_control, "Ctrl+H"),
-            ("🔗", "链接", self.app.show_link_checker, "Ctrl+L"),
         ]
+        if getattr(self.app, 'show_advanced_toolbar', False):
+            tools.extend([
+                ("🤖", "AI助手", self.app.show_ai_assistant, "Ctrl+I"),
+                ("📊", "图表", self.app.show_chart_editor, "Ctrl+G"),
+                ("🧠", "导图", self.app.show_mindmap, "Ctrl+T"),
+                ("📑", "文献", self.app.show_bibliography, "Ctrl+R"),
+                ("🔄", "版本", self.app.show_version_control, "Ctrl+H"),
+                ("🔗", "链接", self.app.show_link_checker, "Ctrl+L"),
+            ])
+        return tools
     
     def _get_right_button_definitions(self):
         """获取右侧按钮定义。"""

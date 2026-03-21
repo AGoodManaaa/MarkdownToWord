@@ -96,9 +96,9 @@ class Minimap:
     def _on_modified(self, event=None):
         try:
             if self._text.edit_modified():
-                self._text.edit_modified(False)
+                # 移除此处的 edit_modified(False) 调用，改由 gui.py 统一管理，防止干扰主刷新逻辑
                 self._schedule_update()
-        except:
+        except Exception:
             pass
     
     def _on_scroll(self, event=None):

@@ -4,6 +4,7 @@
 
 import subprocess
 import re
+import locale
 from typing import List, Callable, Optional
 
 from .models import CommandResult
@@ -95,19 +96,22 @@ class CommandExecutor:
                 )
 
         try:
+            preferred_encoding = locale.getpreferredencoding(False) or "utf-8"
             result = subprocess.run(
                 command,
                 shell=True,
                 capture_output=True,
                 text=True,
+                encoding=preferred_encoding,
+                errors="replace",
                 timeout=self.timeout
             )
             
             return CommandResult(
                 command=command,
                 success=result.returncode == 0,
-                stdout=result.stdout,
-                stderr=result.stderr,
+                stdout=result.stdout or "",
+                stderr=result.stderr or "",
                 return_code=result.returncode
             )
         except subprocess.TimeoutExpired:

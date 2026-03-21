@@ -43,9 +43,6 @@ class SplitScreenManager:
     
     def set_mode(self, mode: SplitMode):
         """设置分屏模式"""
-        if mode == self._current_mode:
-            return
-        
         self._current_mode = mode
         self._apply_mode()
     
@@ -147,14 +144,32 @@ class SplitScreenManager:
             ratio = float(self.app.config.get('split_ratio', 0.5))
         except Exception:
             ratio = 0.5
-        
+
+        ratio = min(0.85, max(0.15, ratio))
+
         try:
             if self._current_mode == SplitMode.VERTICAL:
-                height = max(1, paned.winfo_height())
-                paned.after(80, lambda: self._safe_place_sash(paned, 0, 0, int(height * ratio)))
+                for delay in (80, 180, 320):
+                    paned.after(delay, lambda r=ratio: self._place_vertical_ratio(paned, r))
             elif len(paned.panes()) == 2:
-                width = max(1, paned.winfo_width())
-                paned.after(80, lambda: self._safe_place_sash(paned, 0, int(width * ratio), 0))
+                for delay in (80, 180, 320):
+                    paned.after(delay, lambda r=ratio: self._place_horizontal_ratio(paned, r))
+        except Exception:
+            pass
+
+    def _place_horizontal_ratio(self, paned: tk.PanedWindow, ratio: float):
+        try:
+            paned.update_idletasks()
+            width = max(1, paned.winfo_width())
+            self._safe_place_sash(paned, 0, int(width * ratio), 0)
+        except Exception:
+            pass
+
+    def _place_vertical_ratio(self, paned: tk.PanedWindow, ratio: float):
+        try:
+            paned.update_idletasks()
+            height = max(1, paned.winfo_height())
+            self._safe_place_sash(paned, 0, 0, int(height * ratio))
         except Exception:
             pass
     
